@@ -8,7 +8,8 @@ export type TemplateId =
   | "portfolio"
   | "ats"
   | "creative"
-  | "technical";
+  | "technical"
+  | "interactive";
 
 export type TemplateCategory =
   | "Professional"
@@ -16,7 +17,8 @@ export type TemplateCategory =
   | "ATS"
   | "Creative"
   | "Technical"
-  | "Project Management";
+  | "Project Management"
+  | "Interactive";
 
 export interface PersonalDetails {
   fullName: string;

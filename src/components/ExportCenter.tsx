@@ -41,6 +41,11 @@ export function ExportCenter({ resume }: Props) {
       <p className="text-sm text-slate-500">
         PDF and PNG use canvas capture so the exported file tracks the live preview styling much more closely than browser print.
       </p>
+      {resume.templateId === "interactive" ? (
+        <p className="text-sm text-slate-500">
+          The Interactive template keeps clickable section navigation inside DOC-style exports and DOCX bookmarks. PDF preserves the visual menu, but standard PDF export behaves more like a designed snapshot than live tabs.
+        </p>
+      ) : null}
     </section>
   );
 }

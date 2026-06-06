@@ -10,7 +10,7 @@ interface Props {
   onApply: (templateId: TemplateId) => void;
 }
 
-const categories: Array<TemplateCategory | "All"> = ["All", "Professional", "Executive", "ATS", "Creative", "Technical", "Project Management"];
+const categories: Array<TemplateCategory | "All"> = ["All", "Professional", "Executive", "ATS", "Creative", "Technical", "Project Management", "Interactive"];
 
 export function TemplateGallery({ selectedTemplateId, searchQuery, category, onSearch, onCategory, onApply }: Props) {
   const filtered = templateCatalog.filter((template) => {

@@ -9,6 +9,7 @@ import { ModernResume } from "./ModernResume";
 import { PortfolioResume } from "./PortfolioResume";
 import { SidebarResume } from "./SidebarResume";
 import { TechnicalResume } from "./TechnicalResume";
+import { InteractiveResume } from "./InteractiveResume";
 
 export const templateCatalog: TemplateDefinition[] = [
   { id: "executive", name: "Executive", category: "Executive", description: "High-trust leadership layout with a formal split composition.", accent: "from-slate-900 to-blue-900", fontFamily: "Outfit" },
@@ -21,6 +22,7 @@ export const templateCatalog: TemplateDefinition[] = [
   { id: "ats", name: "ATS Optimized", category: "ATS", description: "Plain-language, low-noise format designed for ATS parsing clarity.", accent: "from-neutral-100 to-neutral-200", fontFamily: "Inter" },
   { id: "creative", name: "Creative", category: "Creative", description: "Bold color, expressive hierarchy, and gallery-ready presentation.", accent: "from-amber-200 via-rose-200 to-violet-200", fontFamily: "Outfit" },
   { id: "technical", name: "Technical Professional", category: "Technical", description: "Dense engineering-focused layout with strong stack visibility.", accent: "from-emerald-300 to-slate-800", fontFamily: "JetBrains Mono" },
+  { id: "interactive", name: "Interactive", category: "Interactive", description: "Navigation-first layout with clickable section menus inside the live resume view.", accent: "from-slate-900 via-blue-700 to-cyan-400", fontFamily: "Inter" },
 ];
 
 export function renderTemplate(resume: ResumeDocument, templateId: TemplateId) {
@@ -45,6 +47,8 @@ export function renderTemplate(resume: ResumeDocument, templateId: TemplateId) {
       return <CreativeResume resume={resume} />;
     case "technical":
       return <TechnicalResume resume={resume} />;
+    case "interactive":
+      return <InteractiveResume resume={resume} />;
     default:
       return <ExecutiveResume resume={resume} />;
   }

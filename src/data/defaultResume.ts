@@ -141,7 +141,7 @@ export function createSeedResumes(): ResumeDocument[] {
     buildResume(
       "AI Project Manager",
       "AI Project Manager",
-      "creative",
+      "interactive",
       "AI-focused project leader combining delivery governance, prompt engineering literacy, and deep technical credibility to move cross-functional programs faster."
     ),
     buildResume(
