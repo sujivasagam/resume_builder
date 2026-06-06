@@ -74,91 +74,105 @@ function getThemeTokens(templateId: ResumeDocument["templateId"]) {
 }
 
 export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
-
-  const rect = element.getBoundingClientRect();
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#ffffff",
-    width: Math.ceil(rect.width),
-    height: Math.ceil(element.scrollHeight),
-    windowWidth: Math.max(document.documentElement.clientWidth, Math.ceil(rect.width)),
-    windowHeight: Math.max(document.documentElement.clientHeight, Math.ceil(element.scrollHeight)),
-    scrollX: 0,
-    scrollY: -window.scrollY,
-  });
-
-  const pdf = new jsPDF({
-    orientation: "portrait",
-    unit: "pt",
-    format: "a4",
-    compress: true,
-  });
-
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 18;
-  const renderWidth = pageWidth - margin * 2;
-  const ratio = renderWidth / canvas.width;
-  const pageCanvasHeight = Math.floor((pageHeight - margin * 2) / ratio);
-  const totalPages = Math.max(1, Math.ceil(canvas.height / pageCanvasHeight));
-
-  for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
-    const sliceCanvas = document.createElement("canvas");
-    const sliceHeight = Math.min(pageCanvasHeight, canvas.height - pageIndex * pageCanvasHeight);
-    sliceCanvas.width = canvas.width;
-    sliceCanvas.height = sliceHeight;
-
-    const context = sliceCanvas.getContext("2d");
-    if (!context) {
-      throw new Error("Unable to create PDF page.");
-    }
-
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-    context.drawImage(
-      canvas,
-      0,
-      pageIndex * pageCanvasHeight,
-      canvas.width,
-      sliceHeight,
-      0,
-      0,
-      canvas.width,
-      sliceHeight
-    );
-
-    if (pageIndex > 0) {
-      pdf.addPage();
-    }
-
-    pdf.addImage(sliceCanvas.toDataURL("image/png"), "PNG", margin, margin, renderWidth, sliceHeight * ratio, undefined, "FAST");
+  const popup = window.open("", "_blank", "noopener,noreferrer,width=1280,height=960");
+  if (!popup) {
+    throw new Error("The browser blocked the PDF window. Please allow popups and try again.");
   }
 
-  pdf.save(fileName);
+  const styles = getAbsoluteStylesMarkup();
+
+  popup.document.write(`
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(fileName)}</title>
+        ${styles}
+        <style>
+          @page { size: A4 portrait; margin: 10mm; }
+          html, body { margin: 0; background: #ffffff; }
+          body { padding: 18px; }
+          .pdf-export-shell { max-width: 1100px; margin: 0 auto; }
+          .pdf-export-helper {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.94);
+            color: white;
+            padding: 14px 16px;
+            font-family: Inter, sans-serif;
+          }
+          .pdf-export-helper button {
+            border: 0;
+            border-radius: 999px;
+            padding: 10px 14px;
+            font: inherit;
+            font-weight: 600;
+            cursor: pointer;
+          }
+          .pdf-export-primary { background: white; color: #0f172a; }
+          .pdf-export-secondary { background: rgba(255,255,255,0.12); color: white; }
+          @media print {
+            .pdf-export-helper { display: none !important; }
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="pdf-export-helper">
+          <span>Use the print dialog and choose "Save as PDF" for the closest browser-rendered result.</span>
+          <div>
+            <button class="pdf-export-primary" onclick="window.print()">Save as PDF</button>
+            <button class="pdf-export-secondary" onclick="window.close()">Close</button>
+          </div>
+        </div>
+        <div class="pdf-export-shell">${element.outerHTML}</div>
+      </body>
+    </html>
+  `);
+  popup.document.close();
 }
 
 export async function exportResumeAsPng(element: HTMLElement, fileName: string) {
-  const { default: html2canvas } = await import("html2canvas");
-  const rect = element.getBoundingClientRect();
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#ffffff",
-    width: Math.ceil(rect.width),
-    height: Math.ceil(element.scrollHeight),
-    windowWidth: Math.max(document.documentElement.clientWidth, Math.ceil(rect.width)),
-    windowHeight: Math.max(document.documentElement.clientHeight, Math.ceil(element.scrollHeight)),
-    scrollX: 0,
-    scrollY: -window.scrollY,
-  });
-
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (!blob) {
-    throw new Error("Unable to generate PNG.");
+  const popup = window.open("", "_blank", "noopener,noreferrer,width=1280,height=960");
+  if (!popup) {
+    throw new Error("The browser blocked the PNG helper window. Please allow popups and try again.");
   }
-  downloadBlob(blob, fileName);
+
+  const styles = getAbsoluteStylesMarkup();
+  popup.document.write(`
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(fileName)}</title>
+        ${styles}
+        <style>
+          body { margin: 0; padding: 18px; background: #ffffff; }
+          .png-export-shell { max-width: 1100px; margin: 0 auto; }
+          .png-export-helper {
+            margin-bottom: 16px;
+            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.94);
+            color: white;
+            padding: 14px 16px;
+            font-family: Inter, sans-serif;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="png-export-helper">Use your system screenshot or browser capture tools for a pixel-perfect image from this page.</div>
+        <div class="png-export-shell">${element.outerHTML}</div>
+      </body>
+    </html>
+  `);
+  popup.document.close();
 }
 
 function getAbsoluteStylesMarkup() {
