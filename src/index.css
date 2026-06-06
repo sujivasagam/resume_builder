@@ -1,111 +1,166 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap");
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Outfit", sans-serif;
-  --font-serif: "Playfair Display", Georgia, serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+:root {
+  color-scheme: light;
 }
 
-/* Custom CSS Utility scrollbars and Print Engine Setup */
-@layer utilities {
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
+.dark {
+  color-scheme: dark;
 }
 
-/* Smooth Interactive Transparencies */
-.bg-glass {
-  background-color: rgba(255, 255, 255, 0.75);
-  backdrop-filter: blur(12px);
+body {
+  margin: 0;
+  font-family: "Inter", sans-serif;
 }
 
-.dark-glass {
-  background-color: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(12px);
+button,
+input,
+textarea {
+  font: inherit;
 }
 
-/* Custom Print styles designed strictly for 2-page or standard executive resumes */
-@media print {
-  @page {
-    size: A4 portrait;
-    margin: 1.2cm 1.2cm 1.2cm 1.2cm;
-  }
+.eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgb(71 85 105);
+}
 
-  *, *::before, *::after {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
+.dark .eyebrow {
+  color: rgb(148 163 184);
+}
 
-  body {
-    background-color: #ffffff !important;
-    background-image: none !important;
-    color: #111111 !important;
-    font-family: inherit !important;
-  }
+.section-title {
+  margin-top: 0.45rem;
+  font-size: 1.45rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
 
-  /* Force hidden variables */
-  .no-print {
-    display: none !important;
-  }
+.studio-panel {
+  border-radius: 2rem;
+  border: 1px solid rgb(226 232 240 / 0.95);
+  background: rgb(255 255 255 / 0.9);
+  padding: 1.5rem;
+  box-shadow: 0 20px 60px rgb(15 23 42 / 0.08);
+  backdrop-filter: blur(20px);
+}
 
-  .print-only {
-    display: block !important;
-  }
+.dark .studio-panel {
+  border-color: rgb(30 41 59 / 0.95);
+  background: rgb(2 6 23 / 0.76);
+  box-shadow: none;
+}
 
-  /* Printable Structure override */
-  .print-full-width {
-    width: 100% !important;
-    max-width: 100% !important;
-    flex-basis: 100% !important;
-    display: block !important;
-  }
+.input-field {
+  width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgb(203 213 225);
+  background: white;
+  padding: 0.9rem 1rem;
+  color: rgb(15 23 42);
+  outline: none;
+}
 
-  .print-grid {
-    display: block !important;
-  }
+.dark .input-field {
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42);
+  color: rgb(241 245 249);
+}
 
-  .print-margin-none {
-    margin: 0 !important;
-    padding: 0 !important;
-  }
+.field-block {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: rgb(51 65 85);
+}
 
-  .print-no-shadow {
-    box-shadow: none !important;
-    border: none !important;
-  }
+.dark .field-block {
+  color: rgb(203 213 225);
+}
 
-  /* Page break rules to prevent ugly chopped-off experience blocks */
-  .print-break-inside-avoid {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
+.primary-button,
+.secondary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  padding: 0.9rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
 
-  .print-page-break {
-    page-break-before: always !important;
-    break-before: page !important;
-  }
+.primary-button:hover,
+.secondary-button:hover {
+  transform: translateY(-1px);
+}
 
-  /* Highlight colors for printing - elegant charcoal for high indicators */
-  .print-text-dark {
-    color: #111111 !important;
-  }
-  
-  .print-text-muted {
-    color: #4b5563 !important;
-  }
+.primary-button {
+  background: rgb(15 23 42);
+  color: white;
+}
 
-  .print-border-b {
-    border-bottom: 1.5px solid #111111 !important;
-  }
+.secondary-button {
+  background: rgb(241 245 249);
+  color: rgb(15 23 42);
+}
 
-  .print-lead-highlight {
-    font-weight: bold !important;
-    color: #000000 !important;
-  }
+.dark .primary-button {
+  background: white;
+  color: rgb(15 23 42);
+}
+
+.dark .secondary-button {
+  background: rgb(15 23 42);
+  color: rgb(226 232 240);
+}
+
+.metric-card {
+  border-radius: 1.5rem;
+  border: 1px solid rgb(226 232 240);
+  background: linear-gradient(180deg, white, rgb(248 250 252));
+  padding: 1rem;
+}
+
+.dark .metric-card {
+  border-color: rgb(30 41 59);
+  background: rgb(15 23 42);
+}
+
+.metric-label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(100 116 139);
+}
+
+.metric-value {
+  display: block;
+  margin-top: 0.45rem;
+  font-size: 1.55rem;
+  font-weight: 700;
+}
+
+.preview-stage {
+  max-height: 78vh;
+  overflow: auto;
+  border-radius: 1.5rem;
+  background:
+    radial-gradient(circle at top, rgb(191 219 254 / 0.4), transparent 24%),
+    linear-gradient(180deg, rgb(241 245 249), rgb(226 232 240));
+  padding: 1.25rem;
+}
+
+.preview-stage-compact {
+  max-height: 60vh;
+}
+
+.dark .preview-stage {
+  background:
+    radial-gradient(circle at top, rgb(30 41 59), transparent 24%),
+    linear-gradient(180deg, rgb(2 6 23), rgb(15 23 42));
 }

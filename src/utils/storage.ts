@@ -1,31 +1,33 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-import { ResumeData } from "../types";
+import { StudioState } from "../types";
 
-const STORAGE_KEY = "ai-resume-studio-resumes-v1";
+const STORAGE_KEY = "ai-resume-studio-pro-v2";
 
-export function loadResumeStore(): ResumeData[] {
-  if (typeof window === "undefined") return [];
+export function loadStudioState(): StudioState | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
 
   try {
-    const payload = window.localStorage.getItem(STORAGE_KEY);
-    if (!payload) return [];
-    const resumes = JSON.parse(payload) as ResumeData[];
-    return Array.isArray(resumes) ? resumes : [];
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw) as StudioState;
   } catch (error) {
-    console.warn("Failed to load resume store", error);
-    return [];
+    console.warn("Failed to load studio state", error);
+    return null;
   }
 }
 
-export function saveResumeStore(resumes: ResumeData[]) {
-  if (typeof window === "undefined") return;
+export function saveStudioState(state: StudioState) {
+  if (typeof window === "undefined") {
+    return;
+  }
 
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(resumes));
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
-    console.warn("Failed to save resume store", error);
+    console.warn("Failed to save studio state", error);
   }
 }
