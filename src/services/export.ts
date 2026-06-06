@@ -199,6 +199,92 @@ export async function exportResumeAsPng(element: HTMLElement, fileName: string) 
   downloadBlob(blob, fileName);
 }
 
+function getAbsoluteStylesMarkup() {
+  return Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+    .map((node) => {
+      if (node.tagName.toLowerCase() === "link") {
+        const link = node as HTMLLinkElement;
+        const absoluteHref = new URL(link.href, window.location.href).href;
+        return `<link rel="stylesheet" href="${absoluteHref}" />`;
+      }
+
+      return node.outerHTML;
+    })
+    .join("\n");
+}
+
+export function exportResumeAsInteractiveHtml(element: HTMLElement, fileName: string) {
+  const styles = getAbsoluteStylesMarkup();
+  const html = `
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>${escapeHtml(fileName)}</title>
+        ${styles}
+        <style>
+          body {
+            margin: 0;
+            padding: 24px;
+            background:
+              radial-gradient(circle at top, rgba(191, 219, 254, 0.4), transparent 24%),
+              linear-gradient(180deg, rgb(241, 245, 249), rgb(226, 232, 240));
+          }
+          .interactive-export-shell {
+            max-width: 1100px;
+            margin: 0 auto;
+          }
+          .interactive-export-helper {
+            position: sticky;
+            top: 12px;
+            z-index: 30;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            border-radius: 20px;
+            background: rgba(15, 23, 42, 0.92);
+            color: white;
+            padding: 14px 18px;
+            font-family: Inter, sans-serif;
+          }
+          .interactive-export-helper a {
+            color: white;
+            text-decoration: underline;
+          }
+          @media (max-width: 640px) {
+            body { padding: 12px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="interactive-export-shell">
+          <div class="interactive-export-helper">
+            <span>This file preserves the live preview design and section navigation best in a browser.</span>
+            <span>Use your browser print dialog if you want a PDF snapshot from this exact view.</span>
+          </div>
+          ${element.outerHTML}
+        </div>
+        <script>
+          document.querySelectorAll('a[href^="#"]').forEach((link) => {
+            link.addEventListener('click', (event) => {
+              const href = link.getAttribute('href');
+              if (!href) return;
+              const target = document.querySelector(href);
+              if (!target) return;
+              event.preventDefault();
+              target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+          });
+        <\/script>
+      </body>
+    </html>
+  `;
+
+  downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), sanitizeFileName(fileName.replace(/\.html$/i, ""), "html"));
+}
+
 function headingParagraph(text: string, tokens: ReturnType<typeof getThemeTokens>, level: keyof typeof HeadingLevel = "HEADING_1") {
   return new Paragraph({
     heading: HeadingLevel[level],

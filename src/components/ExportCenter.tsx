@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ResumeDocument } from "../types";
-import { exportResumeAsDoc, exportResumeAsDocx, exportResumeAsPdf, exportResumeAsPng } from "../services/export";
+import { exportResumeAsDoc, exportResumeAsDocx, exportResumeAsInteractiveHtml, exportResumeAsPdf, exportResumeAsPng } from "../services/export";
 
 interface Props {
   resume: ResumeDocument;
@@ -33,13 +33,23 @@ export function ExportCenter({ resume }: Props) {
     }
   };
 
+  const handleInteractiveHtml = () => {
+    const element = document.getElementById("resume-preview-sheet");
+    if (!element) return;
+    exportResumeAsInteractiveHtml(element, `${resume.name}.html`);
+    setStatus("Interactive HTML downloaded. Open it in a browser for the closest match to the preview.");
+  };
+
   return (
     <section className="studio-panel export-panel space-y-5">
       <div>
         <p className="eyebrow">Export Center</p>
-        <h2 className="section-title">PDF, DOC, DOCX, PNG</h2>
+        <h2 className="section-title">PDF, DOC, DOCX, PNG, HTML</h2>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+        <button className="primary-button export-button" onClick={handleInteractiveHtml}>
+          Export Interactive HTML
+        </button>
         <button className="primary-button export-button" onClick={handlePdf}>
           Export PDF
         </button>
@@ -54,12 +64,12 @@ export function ExportCenter({ resume }: Props) {
         </button>
       </div>
       <p className="text-sm text-slate-500">
-        PDF now opens a print-ready resume page. In the print dialog, choose `Save as PDF`.
+        For the closest match to the preview, use `Export Interactive HTML`. For PDF, the app opens a print-ready page and you choose `Save as PDF`.
       </p>
       {status ? <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700 dark:bg-slate-900 dark:text-slate-200">{status}</div> : null}
       {resume.templateId === "interactive" ? (
         <p className="text-sm text-slate-500">
-          The Interactive template keeps clickable section navigation inside DOC-style exports and DOCX bookmarks. PDF preserves the visual menu, but standard PDF export behaves more like a designed snapshot than live tabs.
+          The Interactive template is preserved best as HTML. DOCX remains an editable Word document, and PDF remains a visual snapshot rather than a live interactive document.
         </p>
       ) : null}
     </section>
