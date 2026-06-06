@@ -1,5 +1,3 @@
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import {
   AlignmentType,
   Bookmark,
@@ -20,6 +18,20 @@ import {
 } from "docx";
 import { ResumeDocument } from "../types";
 
+declare global {
+  interface Window {
+    html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+    jspdf?: {
+      jsPDF: new (options?: Record<string, unknown>) => {
+        internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
+        addImage: (...args: unknown[]) => void;
+        addPage: () => void;
+        save: (fileName: string) => void;
+      };
+    };
+  }
+}
+
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -31,6 +43,55 @@ function downloadBlob(blob: Blob, fileName: string) {
 
 function sanitizeFileName(name: string, extension: string) {
   return `${name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "resume"}.${extension}`;
+}
+
+async function loadScript(src: string) {
+  const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
+  if (existing) {
+    if (existing.dataset.loaded === "true") {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+    });
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = () => {
+      script.dataset.loaded = "true";
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensurePdfDependencies() {
+  if (!window.html2canvas) {
+    try {
+      await loadScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
+    } catch {
+      await loadScript("https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js");
+    }
+  }
+
+  if (!window.jspdf?.jsPDF) {
+    try {
+      await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+    } catch {
+      await loadScript("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
+    }
+  }
+
+  if (!window.html2canvas || !window.jspdf?.jsPDF) {
+    throw new Error("PDF export libraries could not be loaded.");
+  }
 }
 
 function escapeHtml(value: string) {
@@ -84,14 +145,16 @@ function getThemeTokens(templateId: ResumeDocument["templateId"]) {
 }
 
 export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
-  const canvas = await html2canvas(element, {
+  await ensurePdfDependencies();
+
+  const canvas = await window.html2canvas!(element, {
     scale: 2,
     useCORS: true,
     backgroundColor: "#ffffff",
     windowWidth: Math.max(element.scrollWidth, 1200),
   });
 
-  const pdf = new jsPDF({
+  const pdf = new window.jspdf!.jsPDF({
     orientation: "portrait",
     unit: "pt",
     format: "a4",
@@ -144,7 +207,9 @@ export async function exportResumeAsPdf(element: HTMLElement, fileName: string) 
 }
 
 export async function exportResumeAsPng(element: HTMLElement, fileName: string) {
-  const canvas = await html2canvas(element, {
+  await ensurePdfDependencies();
+
+  const canvas = await window.html2canvas!(element, {
     scale: 2,
     useCORS: true,
     backgroundColor: "#ffffff",
