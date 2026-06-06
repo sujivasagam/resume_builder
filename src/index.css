@@ -1,0 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Custom CSS Utility scrollbars and Print Engine Setup */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Smooth Interactive Transparencies */
+.bg-glass {
+  background-color: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+}
+
+.dark-glass {
+  background-color: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+}
+
+/* Custom Print styles designed strictly for 2-page or standard executive resumes */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 1.2cm 1.2cm 1.2cm 1.2cm;
+  }
+
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    background-image: none !important;
+    color: #111111 !important;
+    font-family: inherit !important;
+  }
+
+  /* Force hidden variables */
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* Printable Structure override */
+  .print-full-width {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex-basis: 100% !important;
+    display: block !important;
+  }
+
+  .print-grid {
+    display: block !important;
+  }
+
+  .print-margin-none {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .print-no-shadow {
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Page break rules to prevent ugly chopped-off experience blocks */
+  .print-break-inside-avoid {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .print-page-break {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  /* Highlight colors for printing - elegant charcoal for high indicators */
+  .print-text-dark {
+    color: #111111 !important;
+  }
+  
+  .print-text-muted {
+    color: #4b5563 !important;
+  }
+
+  .print-border-b {
+    border-bottom: 1.5px solid #111111 !important;
+  }
+
+  .print-lead-highlight {
+    font-weight: bold !important;
+    color: #000000 !important;
+  }
+}
