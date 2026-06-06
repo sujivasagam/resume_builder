@@ -114,17 +114,25 @@ async function loadScript(src: string) {
 async function ensureSnapshotDependencies() {
   if (!window.html2canvas) {
     try {
-      await loadScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
+      await loadScript("/vendor/html2canvas.min.js");
     } catch {
-      await loadScript("https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js");
+      try {
+        await loadScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
+      } catch {
+        await loadScript("https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js");
+      }
     }
   }
 
   if (!window.jspdf?.jsPDF) {
     try {
-      await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+      await loadScript("/vendor/jspdf.umd.min.js");
     } catch {
-      await loadScript("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
+      try {
+        await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+      } catch {
+        await loadScript("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
+      }
     }
   }
 
