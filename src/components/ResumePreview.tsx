@@ -1,5 +1,5 @@
 import { ResumeDocument } from "../types";
-import { renderTemplate } from "../templates";
+import { renderTemplate } from "../templates/index";
 
 interface Props {
   resume: ResumeDocument;

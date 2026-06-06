@@ -1,5 +1,5 @@
 import { TemplateCategory, TemplateId } from "../types";
-import { templateCatalog } from "../templates";
+import { templateCatalog } from "../templates/index";
 
 interface Props {
   selectedTemplateId: TemplateId;
