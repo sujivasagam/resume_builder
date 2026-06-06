@@ -32,16 +32,16 @@ export default function App() {
     <div className={studio.state.settings.darkMode ? "dark" : ""}>
       <div className="min-h-screen bg-[radial-gradient(circle_at_top,#dbeafe,transparent_30%),linear-gradient(180deg,#f8fafc,white_50%,#f1f5f9)] text-slate-950 dark:bg-[radial-gradient(circle_at_top,#0f172a,transparent_25%),linear-gradient(180deg,#020617,#0f172a_55%,#111827)] dark:text-slate-100">
         <header className="border-b border-white/50 bg-white/70 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/70">
-          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-6 px-5 py-5 lg:px-8">
+          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-5 lg:px-8">
             <div>
               <p className="eyebrow">AI Resume Studio Pro</p>
-              <h1 className="text-3xl font-semibold tracking-tight">Browser-first resume builder with AI, templates, and exact exports</h1>
+              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Browser-first resume builder with AI, templates, and exact exports</h1>
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex max-w-full flex-nowrap gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible">
               {(["dashboard", "builder", "templates", "ai", "export", "settings"] as View[]).map((item) => (
                 <button
                   key={item}
-                  className={`rounded-full px-4 py-2 text-sm capitalize ${view === item ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950" : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}
+                  className={`shrink-0 rounded-full px-4 py-2 text-sm capitalize ${view === item ? "bg-slate-950 text-white dark:bg-white dark:text-slate-950" : "bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300"}`}
                   onClick={() => setView(item)}
                 >
                   {item}
@@ -51,7 +51,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="mx-auto grid max-w-[1600px] gap-6 px-5 py-6 lg:grid-cols-[360px_minmax(0,1fr)] lg:px-8">
+        <main className="mx-auto grid max-w-[1600px] gap-6 px-4 py-5 sm:px-5 lg:grid-cols-[320px_minmax(0,1fr)] lg:px-8">
           <div className="space-y-6">
             <ResumeManager
               resumes={studio.state.resumes}

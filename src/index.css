@@ -12,6 +12,7 @@
 body {
   margin: 0;
   font-family: "Inter", sans-serif;
+  overflow-x: hidden;
 }
 
 button,
@@ -85,6 +86,7 @@ textarea {
 .secondary-button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   border-radius: 999px;
   padding: 0.9rem 1.25rem;
@@ -163,4 +165,36 @@ textarea {
   background:
     radial-gradient(circle at top, rgb(30 41 59), transparent 24%),
     linear-gradient(180deg, rgb(2 6 23), rgb(15 23 42));
+}
+
+.export-panel {
+  position: sticky;
+  top: 1rem;
+}
+
+.export-button {
+  min-height: 3.25rem;
+  width: 100%;
+}
+
+@media (max-width: 1023px) {
+  .export-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 640px) {
+  .studio-panel {
+    border-radius: 1.5rem;
+    padding: 1rem;
+  }
+
+  .section-title {
+    font-size: 1.2rem;
+  }
+
+  .preview-stage {
+    max-height: none;
+    padding: 0.75rem;
+  }
 }

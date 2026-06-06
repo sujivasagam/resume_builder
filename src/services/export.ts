@@ -1,20 +1,12 @@
 import {
   AlignmentType,
-  Bookmark,
-  BorderStyle,
   ExternalHyperlink,
   HeadingLevel,
-  InternalHyperlink,
   Packer,
   Paragraph,
-  ShadingType,
-  Table,
-  TableCell,
-  TableRow,
+  TableOfContents,
   TextRun,
-  UnderlineType,
   Document as WordDocument,
-  WidthType,
 } from "docx";
 import { ResumeDocument } from "../types";
 
@@ -145,65 +137,49 @@ function getThemeTokens(templateId: ResumeDocument["templateId"]) {
 }
 
 export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
-  await ensurePdfDependencies();
-
-  const canvas = await window.html2canvas!(element, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: "#ffffff",
-    windowWidth: Math.max(element.scrollWidth, 1200),
-  });
-
-  const pdf = new window.jspdf!.jsPDF({
-    orientation: "portrait",
-    unit: "pt",
-    format: "a4",
-    compress: true,
-  });
-
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 20;
-  const targetWidth = pageWidth - margin * 2;
-  const scale = targetWidth / canvas.width;
-  const pageCanvasHeight = Math.floor((pageHeight - margin * 2) / scale);
-  const totalPages = Math.max(1, Math.ceil(canvas.height / pageCanvasHeight));
-
-  for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
-    const sliceCanvas = document.createElement("canvas");
-    const sliceHeight = Math.min(pageCanvasHeight, canvas.height - pageIndex * pageCanvasHeight);
-    sliceCanvas.width = canvas.width;
-    sliceCanvas.height = sliceHeight;
-
-    const context = sliceCanvas.getContext("2d");
-    if (!context) {
-      throw new Error("Unable to create PDF page context.");
-    }
-
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-    context.drawImage(
-      canvas,
-      0,
-      pageIndex * pageCanvasHeight,
-      canvas.width,
-      sliceHeight,
-      0,
-      0,
-      canvas.width,
-      sliceHeight
-    );
-
-    if (pageIndex > 0) {
-      pdf.addPage();
-    }
-
-    const imageData = sliceCanvas.toDataURL("image/png");
-    const renderedHeight = sliceHeight * scale;
-    pdf.addImage(imageData, "PNG", margin, margin, targetWidth, renderedHeight, undefined, "FAST");
+  const popup = window.open("", "_blank", "noopener,noreferrer,width=1100,height=900");
+  if (!popup) {
+    throw new Error("The browser blocked the PDF window. Please allow popups and try again.");
   }
 
-  pdf.save(fileName);
+  const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+    .map((node) => node.outerHTML)
+    .join("\n");
+
+  popup.document.write(`
+    <html>
+      <head>
+        <title>${fileName}</title>
+        ${styles}
+        <style>
+          @page { size: A4 portrait; margin: 12mm; }
+          body { margin: 0; padding: 24px; background: #ffffff; }
+          .print-shell { max-width: 960px; margin: 0 auto; }
+          .print-helper { position: sticky; top: 0; z-index: 20; display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 16px; background: rgba(15, 23, 42, 0.92); color: white; font-family: Inter, sans-serif; }
+          .print-helper button { border: 0; border-radius: 999px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+          .print-primary { background: white; color: #0f172a; }
+          .print-secondary { background: rgba(255,255,255,0.12); color: white; }
+          @media print {
+            .print-helper { display: none; }
+            body { padding: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-helper">
+          <span>Use your browser's destination menu and choose "Save as PDF".</span>
+          <div>
+            <button class="print-primary" onclick="window.print()">Save as PDF</button>
+            <button class="print-secondary" onclick="window.close()">Close</button>
+          </div>
+        </div>
+        <div class="print-shell">
+          ${element.outerHTML}
+        </div>
+      </body>
+    </html>
+  `);
+  popup.document.close();
 }
 
 export async function exportResumeAsPng(element: HTMLElement, fileName: string) {
@@ -223,46 +199,15 @@ export async function exportResumeAsPng(element: HTMLElement, fileName: string) 
   downloadBlob(blob, fileName);
 }
 
-function bookmarkParagraph(id: string, text: string, tokens: ReturnType<typeof getThemeTokens>, level: keyof typeof HeadingLevel = "HEADING_1") {
+function headingParagraph(text: string, tokens: ReturnType<typeof getThemeTokens>, level: keyof typeof HeadingLevel = "HEADING_1") {
   return new Paragraph({
     heading: HeadingLevel[level],
     spacing: { before: 280, after: 120 },
     children: [
-      new Bookmark({
-        id,
-        children: [
-          new TextRun({
-            text,
-            bold: true,
-            color: tokens.heading.replace("#", ""),
-          }),
-        ],
-      }),
-    ],
-  });
-}
-
-function navCell(label: string, anchor: string, tokens: ReturnType<typeof getThemeTokens>) {
-  return new TableCell({
-    width: { size: 20, type: WidthType.PERCENTAGE },
-    shading: { fill: tokens.accentSoft.replace("#", ""), type: ShadingType.CLEAR, color: "auto" },
-    margins: { top: 120, bottom: 120, left: 120, right: 120 },
-    children: [
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        children: [
-          new InternalHyperlink({
-            anchor,
-            children: [
-              new TextRun({
-                text: label,
-                bold: true,
-                color: tokens.accent.replace("#", ""),
-                underline: { type: UnderlineType.SINGLE, color: tokens.accent.replace("#", "") },
-              }),
-            ],
-          }),
-        ],
+      new TextRun({
+        text,
+        bold: true,
+        color: tokens.heading.replace("#", ""),
       }),
     ],
   });
@@ -303,34 +248,38 @@ export async function exportResumeAsDocx(resume: ResumeDocument) {
               }),
             ],
           }),
-          new Table({
-            width: { size: 100, type: WidthType.PERCENTAGE },
-            rows: [
-              new TableRow({
-                children: [
-                  navCell("Summary", "summary", tokens),
-                  navCell("Experience", "experience", tokens),
-                  navCell("Projects", "projects", tokens),
-                  navCell("Skills", "skills", tokens),
-                  navCell("Education", "education", tokens),
-                ],
+          new Paragraph({
+            spacing: { before: 120, after: 80 },
+            children: [
+              new TextRun({
+                text: "Navigate Sections",
+                bold: true,
+                color: tokens.accent.replace("#", ""),
+                size: 22,
               }),
             ],
-            borders: {
-              top: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-              bottom: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-              left: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-              right: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-              insideHorizontal: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-              insideVertical: { style: BorderStyle.NONE, size: 0, color: "FFFFFF" },
-            },
           }),
-          bookmarkParagraph("summary", "Professional Summary", tokens),
+          new TableOfContents("Contents", {
+            hyperlink: true,
+            headingStyleRange: "1-1",
+          }),
+          new Paragraph({
+            spacing: { before: 60, after: 180 },
+            children: [
+              new TextRun({
+                text: "If Word asks to update fields, choose update so the section navigation is generated correctly.",
+                italics: true,
+                color: tokens.text.replace("#", ""),
+                size: 18,
+              }),
+            ],
+          }),
+          headingParagraph("Professional Summary", tokens),
           new Paragraph({
             spacing: { after: 200 },
             children: [new TextRun({ text: resume.personal.summary, color: tokens.text.replace("#", ""), size: 22 })],
           }),
-          bookmarkParagraph("experience", "Experience", tokens),
+          headingParagraph("Experience", tokens),
           ...resume.experience.flatMap((entry) => [
             new Paragraph({
               spacing: { before: 100, after: 60 },
@@ -351,7 +300,7 @@ export async function exportResumeAsDocx(resume: ResumeDocument) {
                 })
             ),
           ]),
-          bookmarkParagraph("projects", "Projects", tokens),
+          headingParagraph("Projects", tokens),
           ...resume.projects.flatMap((entry) => [
             new Paragraph({
               spacing: { before: 100, after: 60 },
@@ -366,12 +315,12 @@ export async function exportResumeAsDocx(resume: ResumeDocument) {
               children: [new TextRun({ text: entry.stack.join(" | "), color: tokens.accent.replace("#", ""), italics: true })],
             }),
           ]),
-          bookmarkParagraph("skills", "Skills", tokens),
+          headingParagraph("Skills", tokens),
           new Paragraph({
             spacing: { after: 180 },
             children: [new TextRun({ text: resume.skills.join("  |  "), color: tokens.text.replace("#", "") })],
           }),
-          bookmarkParagraph("education", "Education", tokens),
+          headingParagraph("Education", tokens),
           ...resume.education.map(
             (entry) =>
               new Paragraph({
@@ -453,7 +402,7 @@ function buildDocHtml(resume: ResumeDocument) {
           .title { margin-top: 12px; font-size: 18px; color: #e2e8f0; }
           .contact { margin-top: 18px; font-size: 13px; line-height: 1.7; }
           .nav { margin-top: 20px; }
-          .nav a { display: inline-block; margin: 0 8px 8px 0; padding: 8px 14px; background: rgba(255,255,255,0.14); color: white; text-decoration: none; border-radius: 999px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; }
+          .nav span { display: inline-block; margin: 0 8px 8px 0; padding: 8px 14px; background: rgba(255,255,255,0.14); color: white; border-radius: 999px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; }
           .section { margin-top: 20px; padding: 22px; background: ${tokens.panel}; border: 1px solid #e2e8f0; border-radius: 20px; }
           .section h2 { margin: 0 0 14px; color: ${tokens.heading}; font-size: 18px; text-transform: uppercase; letter-spacing: 0.18em; }
           .grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 20px; margin-top: 20px; }
@@ -478,11 +427,11 @@ function buildDocHtml(resume: ResumeDocument) {
             <div class="contact">${escapeHtml(resume.personal.email)} | ${escapeHtml(resume.personal.phone)} | ${escapeHtml(resume.personal.location)}</div>
             <div class="contact links"><a href="https://${escapeHtml(resume.personal.linkedin.replace(/^https?:\/\//, ""))}">${escapeHtml(resume.personal.linkedin)}</a> | <a href="https://${escapeHtml(resume.personal.portfolio.replace(/^https?:\/\//, ""))}">${escapeHtml(resume.personal.portfolio)}</a></div>
             <div class="nav">
-              <a href="#summary">Summary</a>
-              <a href="#experience">Experience</a>
-              <a href="#projects">Projects</a>
-              <a href="#skills">Skills</a>
-              <a href="#education">Education</a>
+              <span>Summary</span>
+              <span>Experience</span>
+              <span>Projects</span>
+              <span>Skills</span>
+              <span>Education</span>
             </div>
           </div>
           <div class="grid">
