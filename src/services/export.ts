@@ -1,14 +1,25 @@
 import {
-  AlignmentType,
-  ExternalHyperlink,
-  HeadingLevel,
+  ImageRun,
   Packer,
+  PageBreak,
   Paragraph,
-  TableOfContents,
-  TextRun,
   Document as WordDocument,
 } from "docx";
 import { ResumeDocument } from "../types";
+
+declare global {
+  interface Window {
+    html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+    jspdf?: {
+      jsPDF: new (options?: Record<string, unknown>) => {
+        internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
+        addImage: (...args: unknown[]) => void;
+        addPage: () => void;
+        save: (fileName: string) => void;
+      };
+    };
+  }
+}
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -73,106 +84,170 @@ function getThemeTokens(templateId: ResumeDocument["templateId"]) {
   }
 }
 
-export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=1280,height=960");
-  if (!popup) {
-    throw new Error("The browser blocked the PDF window. Please allow popups and try again.");
+async function loadScript(src: string) {
+  const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
+  if (existing) {
+    if (existing.dataset.loaded === "true") {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+    });
+    return;
   }
 
-  const styles = getAbsoluteStylesMarkup();
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = () => {
+      script.dataset.loaded = "true";
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
 
-  popup.document.write(`
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>${escapeHtml(fileName)}</title>
-        ${styles}
-        <style>
-          @page { size: A4 portrait; margin: 10mm; }
-          html, body { margin: 0; background: #ffffff; }
-          body { padding: 18px; }
-          .pdf-export-shell { max-width: 1100px; margin: 0 auto; }
-          .pdf-export-helper {
-            position: sticky;
-            top: 0;
-            z-index: 20;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 16px;
-            border-radius: 18px;
-            background: rgba(15, 23, 42, 0.94);
-            color: white;
-            padding: 14px 16px;
-            font-family: Inter, sans-serif;
-          }
-          .pdf-export-helper button {
-            border: 0;
-            border-radius: 999px;
-            padding: 10px 14px;
-            font: inherit;
-            font-weight: 600;
-            cursor: pointer;
-          }
-          .pdf-export-primary { background: white; color: #0f172a; }
-          .pdf-export-secondary { background: rgba(255,255,255,0.12); color: white; }
-          @media print {
-            .pdf-export-helper { display: none !important; }
-            body { padding: 0; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="pdf-export-helper">
-          <span>Use the print dialog and choose "Save as PDF" for the closest browser-rendered result.</span>
-          <div>
-            <button class="pdf-export-primary" onclick="window.print()">Save as PDF</button>
-            <button class="pdf-export-secondary" onclick="window.close()">Close</button>
-          </div>
-        </div>
-        <div class="pdf-export-shell">${element.outerHTML}</div>
-      </body>
-    </html>
-  `);
-  popup.document.close();
+async function ensureSnapshotDependencies() {
+  if (!window.html2canvas) {
+    try {
+      await loadScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
+    } catch {
+      await loadScript("https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js");
+    }
+  }
+
+  if (!window.jspdf?.jsPDF) {
+    try {
+      await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
+    } catch {
+      await loadScript("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
+    }
+  }
+
+  if (!window.html2canvas || !window.jspdf?.jsPDF) {
+    throw new Error("Export libraries could not be loaded. Please check your network and try again.");
+  }
+}
+
+async function waitForPreviewReady() {
+  if ("fonts" in document) {
+    try {
+      await (document as Document & { fonts: FontFaceSet }).fonts.ready;
+    } catch {
+      // no-op
+    }
+  }
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
+  const pages: HTMLCanvasElement[] = [];
+  const totalPages = Math.max(1, Math.ceil(canvas.height / targetPageHeightPx));
+
+  for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
+    const page = document.createElement("canvas");
+    const sliceHeight = Math.min(targetPageHeightPx, canvas.height - pageIndex * targetPageHeightPx);
+    page.width = canvas.width;
+    page.height = sliceHeight;
+
+    const context = page.getContext("2d");
+    if (!context) {
+      continue;
+    }
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, page.width, page.height);
+    context.drawImage(
+      canvas,
+      0,
+      pageIndex * targetPageHeightPx,
+      canvas.width,
+      sliceHeight,
+      0,
+      0,
+      canvas.width,
+      sliceHeight
+    );
+
+    pages.push(page);
+  }
+
+  return pages;
+}
+
+async function capturePreviewCanvas(element: HTMLElement) {
+  await ensureSnapshotDependencies();
+  await waitForPreviewReady();
+
+  const previousOverflow = document.body.style.overflow;
+  document.body.style.overflow = "visible";
+
+  try {
+    const rect = element.getBoundingClientRect();
+    return await window.html2canvas!(element, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      width: Math.ceil(rect.width),
+      height: Math.ceil(element.scrollHeight),
+      windowWidth: Math.max(document.documentElement.clientWidth, Math.ceil(rect.width)),
+      windowHeight: Math.max(document.documentElement.clientHeight, Math.ceil(element.scrollHeight)),
+      scrollX: 0,
+      scrollY: -window.scrollY,
+    });
+  } finally {
+    document.body.style.overflow = previousOverflow;
+  }
+}
+
+export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
+  const canvas = await capturePreviewCanvas(element);
+  const pdf = new window.jspdf!.jsPDF({
+    orientation: "portrait",
+    unit: "pt",
+    format: "a4",
+    compress: true,
+  });
+
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 18;
+  const renderWidth = pageWidth - margin * 2;
+  const ratio = renderWidth / canvas.width;
+  const pageHeightPx = Math.floor((pageHeight - margin * 2) / ratio);
+  const pages = sliceCanvas(canvas, pageHeightPx);
+
+  pages.forEach((pageCanvas, index) => {
+    if (index > 0) {
+      pdf.addPage();
+    }
+
+    pdf.addImage(
+      pageCanvas.toDataURL("image/png"),
+      "PNG",
+      margin,
+      margin,
+      renderWidth,
+      pageCanvas.height * ratio,
+      undefined,
+      "FAST"
+    );
+  });
+
+  pdf.save(fileName);
 }
 
 export async function exportResumeAsPng(element: HTMLElement, fileName: string) {
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=1280,height=960");
-  if (!popup) {
-    throw new Error("The browser blocked the PNG helper window. Please allow popups and try again.");
+  const canvas = await capturePreviewCanvas(element);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) {
+    throw new Error("Unable to generate PNG.");
   }
-
-  const styles = getAbsoluteStylesMarkup();
-  popup.document.write(`
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>${escapeHtml(fileName)}</title>
-        ${styles}
-        <style>
-          body { margin: 0; padding: 18px; background: #ffffff; }
-          .png-export-shell { max-width: 1100px; margin: 0 auto; }
-          .png-export-helper {
-            margin-bottom: 16px;
-            border-radius: 18px;
-            background: rgba(15, 23, 42, 0.94);
-            color: white;
-            padding: 14px 16px;
-            font-family: Inter, sans-serif;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="png-export-helper">Use your system screenshot or browser capture tools for a pixel-perfect image from this page.</div>
-        <div class="png-export-shell">${element.outerHTML}</div>
-      </body>
-    </html>
-  `);
-  popup.document.close();
+  downloadBlob(blob, fileName);
 }
 
 function getAbsoluteStylesMarkup() {
@@ -261,164 +336,54 @@ export function exportResumeAsInteractiveHtml(element: HTMLElement, fileName: st
   downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), sanitizeFileName(fileName.replace(/\.html$/i, ""), "html"));
 }
 
-function headingParagraph(text: string, tokens: ReturnType<typeof getThemeTokens>, level: keyof typeof HeadingLevel = "HEADING_1") {
-  return new Paragraph({
-    heading: HeadingLevel[level],
-    spacing: { before: 280, after: 120 },
-    children: [
-      new TextRun({
-        text,
-        bold: true,
-        color: tokens.heading.replace("#", ""),
-      }),
-    ],
-  });
+async function canvasToUint8Array(canvas: HTMLCanvasElement) {
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) {
+    throw new Error("Unable to serialize preview image.");
+  }
+  const buffer = await blob.arrayBuffer();
+  return new Uint8Array(buffer);
 }
 
-export async function exportResumeAsDocx(resume: ResumeDocument) {
-  const tokens = getThemeTokens(resume.templateId);
-
+export async function exportResumeAsDocx(element: HTMLElement, resume: ResumeDocument) {
+  const canvas = await capturePreviewCanvas(element);
+  const pageWidthPx = 1500;
+  const pageHeightPx = 2120;
+  const pages = sliceCanvas(canvas, Math.floor((pageHeightPx / pageWidthPx) * canvas.width));
   const doc = new WordDocument({
     sections: [
       {
-        children: [
-          new Paragraph({
-            spacing: { after: 160 },
-            children: [new TextRun({ text: resume.personal.fullName, bold: true, size: 34, color: tokens.heading.replace("#", "") })],
-          }),
-          new Paragraph({
-            spacing: { after: 220 },
-            children: [new TextRun({ text: resume.personal.title, color: tokens.accent.replace("#", ""), bold: true, size: 24 })],
-          }),
-          new Paragraph({
-            spacing: { after: 160 },
-            children: [
-              new TextRun({ text: `${resume.personal.email} | ${resume.personal.phone} | ${resume.personal.location}`, color: tokens.text.replace("#", "") }),
-            ],
-          }),
-          new Paragraph({
-            spacing: { after: 260 },
-            children: [
-              new ExternalHyperlink({
-                link: `https://${resume.personal.linkedin.replace(/^https?:\/\//, "")}`,
-                children: [new TextRun({ text: resume.personal.linkedin, style: "Hyperlink" })],
-              }),
-              new TextRun({ text: "   " }),
-              new ExternalHyperlink({
-                link: `https://${resume.personal.portfolio.replace(/^https?:\/\//, "")}`,
-                children: [new TextRun({ text: resume.personal.portfolio, style: "Hyperlink" })],
-              }),
-            ],
-          }),
-          new Paragraph({
-            spacing: { before: 120, after: 80 },
-            children: [
-              new TextRun({
-                text: "Navigate Sections",
-                bold: true,
-                color: tokens.accent.replace("#", ""),
-                size: 22,
-              }),
-            ],
-          }),
-          new TableOfContents("Contents", {
-            hyperlink: true,
-            headingStyleRange: "1-1",
-          }),
-          new Paragraph({
-            spacing: { before: 60, after: 180 },
-            children: [
-              new TextRun({
-                text: "If Word asks to update fields, choose update so the section navigation is generated correctly.",
-                italics: true,
-                color: tokens.text.replace("#", ""),
-                size: 18,
-              }),
-            ],
-          }),
-          headingParagraph("Professional Summary", tokens),
-          new Paragraph({
-            spacing: { after: 200 },
-            children: [new TextRun({ text: resume.personal.summary, color: tokens.text.replace("#", ""), size: 22 })],
-          }),
-          headingParagraph("Experience", tokens),
-          ...resume.experience.flatMap((entry) => [
-            new Paragraph({
-              spacing: { before: 100, after: 60 },
-              children: [
-                new TextRun({ text: `${entry.role} | ${entry.company}`, bold: true, color: tokens.heading.replace("#", ""), size: 24 }),
-              ],
-            }),
-            new Paragraph({
-              spacing: { after: 60 },
-              children: [new TextRun({ text: `${entry.start} - ${entry.end} | ${entry.location}`, italics: true, color: tokens.accent.replace("#", "") })],
-            }),
-            ...entry.highlights.map(
-              (highlight) =>
+        children: await Promise.all(
+          pages.flatMap((pageCanvas, index) => {
+            const width = 560;
+            const height = Math.round((pageCanvas.height / pageCanvas.width) * width);
+
+            const paragraph = canvasToUint8Array(pageCanvas).then(
+              (bytes) =>
                 new Paragraph({
-                  bullet: { level: 0 },
-                  spacing: { after: 40 },
-                  children: [new TextRun({ text: highlight, color: tokens.text.replace("#", "") })],
+                  children: [
+                    new ImageRun({
+                      data: bytes,
+                      transformation: { width, height },
+                    }),
+                  ],
                 })
-            ),
-          ]),
-          headingParagraph("Projects", tokens),
-          ...resume.projects.flatMap((entry) => [
-            new Paragraph({
-              spacing: { before: 100, after: 60 },
-              children: [new TextRun({ text: entry.name, bold: true, color: tokens.heading.replace("#", ""), size: 24 })],
-            }),
-            new Paragraph({
-              spacing: { after: 60 },
-              children: [new TextRun({ text: entry.summary, color: tokens.text.replace("#", "") })],
-            }),
-            new Paragraph({
-              spacing: { after: 80 },
-              children: [new TextRun({ text: entry.stack.join(" | "), color: tokens.accent.replace("#", ""), italics: true })],
-            }),
-          ]),
-          headingParagraph("Skills", tokens),
-          new Paragraph({
-            spacing: { after: 180 },
-            children: [new TextRun({ text: resume.skills.join("  |  "), color: tokens.text.replace("#", "") })],
-          }),
-          headingParagraph("Certifications", tokens),
-          ...resume.certifications.map(
-            (entry) =>
-              new Paragraph({
-                spacing: { after: 60 },
-                children: [
-                  new TextRun({ text: `${entry.name} | ${entry.issuer}`, bold: true, color: tokens.heading.replace("#", "") }),
-                  new TextRun({ text: `\n${entry.date}${entry.credentialId ? ` | ${entry.credentialId}` : ""}`, color: tokens.text.replace("#", "") }),
-                ],
-              })
-          ),
-          headingParagraph("Achievements", tokens),
-          ...resume.achievements.map(
-            (item) =>
-              new Paragraph({
-                bullet: { level: 0 },
-                spacing: { after: 40 },
-                children: [new TextRun({ text: item, color: tokens.text.replace("#", "") })],
-              })
-          ),
-          headingParagraph("Education", tokens),
-          ...resume.education.map(
-            (entry) =>
-              new Paragraph({
-                spacing: { after: 80 },
-                children: [
-                  new TextRun({ text: `${entry.degree} | ${entry.school}`, bold: true, color: tokens.heading.replace("#", "") }),
-                  new TextRun({ text: `\n${entry.period}${entry.score ? ` | ${entry.score}` : ""}`, color: tokens.text.replace("#", "") }),
-                ],
-              })
-          ),
-          headingParagraph("Languages", tokens),
-          new Paragraph({
-            spacing: { after: 160 },
-            children: [new TextRun({ text: resume.languages.join(" | "), color: tokens.text.replace("#", "") })],
-          }),
-        ],
+            );
+
+            if (index === pages.length - 1) {
+              return [paragraph];
+            }
+
+            return [
+              paragraph,
+              Promise.resolve(
+                new Paragraph({
+                  children: [new PageBreak()],
+                })
+              ),
+            ];
+          })
+        ),
       },
     ],
   });
@@ -553,7 +518,25 @@ function buildDocHtml(resume: ResumeDocument) {
   `;
 }
 
-export function exportResumeAsDoc(resume: ResumeDocument) {
-  const html = buildDocHtml(resume);
+export async function exportResumeAsDoc(element: HTMLElement, resume: ResumeDocument) {
+  const canvas = await capturePreviewCanvas(element);
+  const pages = sliceCanvas(canvas, Math.floor((2120 / 1500) * canvas.width));
+  const images = pages.map((pageCanvas) => pageCanvas.toDataURL("image/png"));
+  const html = `
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(resume.name)}</title>
+        <style>
+          body { margin: 0; padding: 20px; background: #ffffff; }
+          .page { margin: 0 auto 20px; max-width: 860px; page-break-after: always; }
+          .page img { display: block; width: 100%; height: auto; }
+        </style>
+      </head>
+      <body>
+        ${images.map((src) => `<div class="page"><img src="${src}" alt="${escapeHtml(resume.name)}" /></div>`).join("")}
+      </body>
+    </html>
+  `;
   downloadBlob(new Blob([html], { type: "application/msword" }), sanitizeFileName(resume.name, "doc"));
 }

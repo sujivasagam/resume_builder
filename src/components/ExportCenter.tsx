@@ -9,20 +9,22 @@ interface Props {
 export function ExportCenter({ resume }: Props) {
   const [status, setStatus] = useState<string>("");
 
+  const getPreviewElement = () => document.getElementById("resume-preview-sheet");
+
   const handlePdf = async () => {
-    const element = document.getElementById("resume-preview-sheet");
+    const element = getPreviewElement();
     if (!element) return;
     try {
-      setStatus('Opening print-ready PDF window...');
+      setStatus("Generating visual PDF...");
       await exportResumeAsPdf(element, `${resume.name}.pdf`);
-      setStatus('Choose "Save as PDF" in the print window.');
+      setStatus("PDF downloaded.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "PDF export failed.");
     }
   };
 
   const handlePng = async () => {
-    const element = document.getElementById("resume-preview-sheet");
+    const element = getPreviewElement();
     if (!element) return;
     try {
       setStatus("Generating PNG...");
@@ -33,8 +35,32 @@ export function ExportCenter({ resume }: Props) {
     }
   };
 
+  const handleDocx = async () => {
+    const element = getPreviewElement();
+    if (!element) return;
+    try {
+      setStatus("Generating visual DOCX...");
+      await exportResumeAsDocx(element, resume);
+      setStatus("DOCX downloaded.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "DOCX export failed.");
+    }
+  };
+
+  const handleDoc = async () => {
+    const element = getPreviewElement();
+    if (!element) return;
+    try {
+      setStatus("Generating visual DOC...");
+      await exportResumeAsDoc(element, resume);
+      setStatus("DOC downloaded.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "DOC export failed.");
+    }
+  };
+
   const handleInteractiveHtml = () => {
-    const element = document.getElementById("resume-preview-sheet");
+    const element = getPreviewElement();
     if (!element) return;
     exportResumeAsInteractiveHtml(element, `${resume.name}.html`);
     setStatus("Interactive HTML downloaded. Open it in a browser for the closest match to the preview.");
@@ -53,10 +79,10 @@ export function ExportCenter({ resume }: Props) {
         <button className="primary-button export-button" onClick={handlePdf}>
           Export PDF
         </button>
-        <button className="secondary-button export-button" onClick={() => exportResumeAsDocx(resume)}>
+        <button className="secondary-button export-button" onClick={handleDocx}>
           Export DOCX
         </button>
-        <button className="secondary-button export-button" onClick={() => exportResumeAsDoc(resume)}>
+        <button className="secondary-button export-button" onClick={handleDoc}>
           Export DOC
         </button>
         <button className="secondary-button export-button" onClick={handlePng}>
@@ -64,12 +90,12 @@ export function ExportCenter({ resume }: Props) {
         </button>
       </div>
       <p className="text-sm text-slate-500">
-        For the closest match to the preview, use `Export Interactive HTML`. For PDF, the app opens a print-ready page and you choose `Save as PDF`.
+        PDF, DOC, and DOCX now use the live preview as a visual snapshot source. HTML still gives the closest match for design plus working in-browser section navigation.
       </p>
       {status ? <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700 dark:bg-slate-900 dark:text-slate-200">{status}</div> : null}
       {resume.templateId === "interactive" ? (
         <p className="text-sm text-slate-500">
-          The Interactive template is preserved best as HTML. DOCX remains an editable Word document, and PDF remains a visual snapshot rather than a live interactive document.
+          The Interactive template is preserved visually in PDF, DOC, and DOCX now. Only HTML keeps the actual clickable browser interaction behavior.
         </p>
       ) : null}
     </section>
