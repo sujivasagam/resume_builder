@@ -136,19 +136,19 @@ export function createSeedResumes(): ResumeDocument[] {
       "Technical Project Manager",
       "Technical Project Manager",
       "executive",
-      "Technical Project Manager with 13+ years spanning engineering delivery, PHP application architecture, Agile execution, and AI-aware operating models."
+      "Technical Project Manager with 15+ years spanning engineering delivery, PHP application architecture, Agile execution, and AI-aware operating models."
     ),
     buildResume(
       "AI Project Manager",
       "AI Project Manager",
       "interactive",
-      "AI-focused project leader combining delivery governance, prompt engineering literacy, and deep technical credibility to move cross-functional programs faster."
+      "AI-focused project leader with 15+ years combining delivery governance, prompt engineering literacy, and deep technical credibility to move cross-functional programs faster."
     ),
     buildResume(
       "Engineering Manager",
       "Engineering Manager",
       "corporate",
-      "Engineering manager profile grounded in technical depth, execution rigor, mentoring, and practical stakeholder alignment across product delivery."
+      "Engineering manager profile grounded in 15+ years of technical depth, execution rigor, mentoring, and practical stakeholder alignment across product delivery."
     ),
   ];
 }

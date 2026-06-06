@@ -6,6 +6,7 @@ const navItems = [
   { id: "interactive-projects", label: "Projects" },
   { id: "interactive-skills", label: "Skills" },
   { id: "interactive-education", label: "Education" },
+  { id: "interactive-certifications", label: "Certifications" },
 ];
 
 export function InteractiveResume({ resume }: { resume: ResumeDocument }) {
@@ -85,6 +86,21 @@ export function InteractiveResume({ resume }: { resume: ResumeDocument }) {
               ))}
             </div>
           </section>
+
+          <section id="interactive-certifications" className="scroll-mt-24 rounded-[1.5rem] border border-slate-200 bg-white p-6">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.35em] text-slate-500">Certifications</h3>
+            <div className="mt-5 grid gap-4">
+              {resume.certifications.map((entry) => (
+                <article key={entry.id} className="rounded-[1.25rem] border border-slate-200 bg-slate-50/70 p-5">
+                  <h4 className="text-base font-semibold">{entry.name}</h4>
+                  <p className="mt-2 text-sm text-slate-600">{entry.issuer}</p>
+                  <p className="mt-3 text-xs uppercase tracking-[0.2em] text-slate-500">
+                    {entry.date}{entry.credentialId ? ` • ${entry.credentialId}` : ""}
+                  </p>
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
 
         <aside className="space-y-6">
@@ -120,6 +136,29 @@ export function InteractiveResume({ resume }: { resume: ResumeDocument }) {
               <p>{resume.personal.location}</p>
               <p>{resume.personal.linkedin}</p>
               <p>{resume.personal.portfolio}</p>
+            </div>
+          </section>
+
+          <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50/80 p-6">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.35em] text-slate-500">Achievements</h3>
+            <ul className="mt-4 space-y-2 text-sm text-slate-700">
+              {resume.achievements.map((item) => (
+                <li key={item} className="flex gap-2">
+                  <span className="text-cyan-600">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="rounded-[1.5rem] border border-slate-200 bg-white p-6">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.35em] text-slate-500">Languages</h3>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {resume.languages.map((item) => (
+                <span key={item} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
+                  {item}
+                </span>
+              ))}
             </div>
           </section>
         </aside>

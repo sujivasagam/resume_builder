@@ -10,20 +10,6 @@ import {
 } from "docx";
 import { ResumeDocument } from "../types";
 
-declare global {
-  interface Window {
-    html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
-    jspdf?: {
-      jsPDF: new (options?: Record<string, unknown>) => {
-        internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
-        addImage: (...args: unknown[]) => void;
-        addPage: () => void;
-        save: (fileName: string) => void;
-      };
-    };
-  }
-}
-
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -35,55 +21,6 @@ function downloadBlob(blob: Blob, fileName: string) {
 
 function sanitizeFileName(name: string, extension: string) {
   return `${name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "resume"}.${extension}`;
-}
-
-async function loadScript(src: string) {
-  const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
-  if (existing) {
-    if (existing.dataset.loaded === "true") {
-      return;
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
-    });
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.onload = () => {
-      script.dataset.loaded = "true";
-      resolve();
-    };
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
-    document.head.appendChild(script);
-  });
-}
-
-async function ensurePdfDependencies() {
-  if (!window.html2canvas) {
-    try {
-      await loadScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
-    } catch {
-      await loadScript("https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js");
-    }
-  }
-
-  if (!window.jspdf?.jsPDF) {
-    try {
-      await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
-    } catch {
-      await loadScript("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
-    }
-  }
-
-  if (!window.html2canvas || !window.jspdf?.jsPDF) {
-    throw new Error("PDF export libraries could not be loaded.");
-  }
 }
 
 function escapeHtml(value: string) {
@@ -137,59 +74,84 @@ function getThemeTokens(templateId: ResumeDocument["templateId"]) {
 }
 
 export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=1100,height=900");
-  if (!popup) {
-    throw new Error("The browser blocked the PDF window. Please allow popups and try again.");
-  }
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
 
-  const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-    .map((node) => node.outerHTML)
-    .join("\n");
-
-  popup.document.write(`
-    <html>
-      <head>
-        <title>${fileName}</title>
-        ${styles}
-        <style>
-          @page { size: A4 portrait; margin: 12mm; }
-          body { margin: 0; padding: 24px; background: #ffffff; }
-          .print-shell { max-width: 960px; margin: 0 auto; }
-          .print-helper { position: sticky; top: 0; z-index: 20; display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 16px; background: rgba(15, 23, 42, 0.92); color: white; font-family: Inter, sans-serif; }
-          .print-helper button { border: 0; border-radius: 999px; padding: 10px 14px; font: inherit; font-weight: 600; cursor: pointer; }
-          .print-primary { background: white; color: #0f172a; }
-          .print-secondary { background: rgba(255,255,255,0.12); color: white; }
-          @media print {
-            .print-helper { display: none; }
-            body { padding: 0; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="print-helper">
-          <span>Use your browser's destination menu and choose "Save as PDF".</span>
-          <div>
-            <button class="print-primary" onclick="window.print()">Save as PDF</button>
-            <button class="print-secondary" onclick="window.close()">Close</button>
-          </div>
-        </div>
-        <div class="print-shell">
-          ${element.outerHTML}
-        </div>
-      </body>
-    </html>
-  `);
-  popup.document.close();
-}
-
-export async function exportResumeAsPng(element: HTMLElement, fileName: string) {
-  await ensurePdfDependencies();
-
-  const canvas = await window.html2canvas!(element, {
+  const rect = element.getBoundingClientRect();
+  const canvas = await html2canvas(element, {
     scale: 2,
     useCORS: true,
     backgroundColor: "#ffffff",
-    windowWidth: Math.max(element.scrollWidth, 1200),
+    width: Math.ceil(rect.width),
+    height: Math.ceil(element.scrollHeight),
+    windowWidth: Math.max(document.documentElement.clientWidth, Math.ceil(rect.width)),
+    windowHeight: Math.max(document.documentElement.clientHeight, Math.ceil(element.scrollHeight)),
+    scrollX: 0,
+    scrollY: -window.scrollY,
+  });
+
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "pt",
+    format: "a4",
+    compress: true,
+  });
+
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 18;
+  const renderWidth = pageWidth - margin * 2;
+  const ratio = renderWidth / canvas.width;
+  const pageCanvasHeight = Math.floor((pageHeight - margin * 2) / ratio);
+  const totalPages = Math.max(1, Math.ceil(canvas.height / pageCanvasHeight));
+
+  for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
+    const sliceCanvas = document.createElement("canvas");
+    const sliceHeight = Math.min(pageCanvasHeight, canvas.height - pageIndex * pageCanvasHeight);
+    sliceCanvas.width = canvas.width;
+    sliceCanvas.height = sliceHeight;
+
+    const context = sliceCanvas.getContext("2d");
+    if (!context) {
+      throw new Error("Unable to create PDF page.");
+    }
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+    context.drawImage(
+      canvas,
+      0,
+      pageIndex * pageCanvasHeight,
+      canvas.width,
+      sliceHeight,
+      0,
+      0,
+      canvas.width,
+      sliceHeight
+    );
+
+    if (pageIndex > 0) {
+      pdf.addPage();
+    }
+
+    pdf.addImage(sliceCanvas.toDataURL("image/png"), "PNG", margin, margin, renderWidth, sliceHeight * ratio, undefined, "FAST");
+  }
+
+  pdf.save(fileName);
+}
+
+export async function exportResumeAsPng(element: HTMLElement, fileName: string) {
+  const { default: html2canvas } = await import("html2canvas");
+  const rect = element.getBoundingClientRect();
+  const canvas = await html2canvas(element, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: "#ffffff",
+    width: Math.ceil(rect.width),
+    height: Math.ceil(element.scrollHeight),
+    windowWidth: Math.max(document.documentElement.clientWidth, Math.ceil(rect.width)),
+    windowHeight: Math.max(document.documentElement.clientHeight, Math.ceil(element.scrollHeight)),
+    scrollX: 0,
+    scrollY: -window.scrollY,
   });
 
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
@@ -406,6 +368,26 @@ export async function exportResumeAsDocx(resume: ResumeDocument) {
             spacing: { after: 180 },
             children: [new TextRun({ text: resume.skills.join("  |  "), color: tokens.text.replace("#", "") })],
           }),
+          headingParagraph("Certifications", tokens),
+          ...resume.certifications.map(
+            (entry) =>
+              new Paragraph({
+                spacing: { after: 60 },
+                children: [
+                  new TextRun({ text: `${entry.name} | ${entry.issuer}`, bold: true, color: tokens.heading.replace("#", "") }),
+                  new TextRun({ text: `\n${entry.date}${entry.credentialId ? ` | ${entry.credentialId}` : ""}`, color: tokens.text.replace("#", "") }),
+                ],
+              })
+          ),
+          headingParagraph("Achievements", tokens),
+          ...resume.achievements.map(
+            (item) =>
+              new Paragraph({
+                bullet: { level: 0 },
+                spacing: { after: 40 },
+                children: [new TextRun({ text: item, color: tokens.text.replace("#", "") })],
+              })
+          ),
           headingParagraph("Education", tokens),
           ...resume.education.map(
             (entry) =>
@@ -417,6 +399,11 @@ export async function exportResumeAsDocx(resume: ResumeDocument) {
                 ],
               })
           ),
+          headingParagraph("Languages", tokens),
+          new Paragraph({
+            spacing: { after: 160 },
+            children: [new TextRun({ text: resume.languages.join(" | "), color: tokens.text.replace("#", "") })],
+          }),
         ],
       },
     ],
