@@ -10,39 +10,60 @@ export function ExportCenter({ resume }: Props) {
   const [status, setStatus] = useState<string>("");
 
   const getPreviewElement = () => document.getElementById("resume-preview-sheet");
+  const logExportError = (format: "PDF" | "DOC" | "DOCX", error: unknown) => {
+    console.error(`[Resume Export] ${format} export failed`, error);
+  };
 
   const handlePdf = async () => {
     const element = getPreviewElement();
-    if (!element) return;
+    if (!element) {
+      const error = new Error("Resume preview element #resume-preview-sheet was not found.");
+      logExportError("PDF", error);
+      setStatus(error.message);
+      return;
+    }
     try {
       setStatus("Generating visual PDF...");
       await exportResumeAsPdf(element, `${resume.name}.pdf`);
       setStatus("PDF downloaded.");
     } catch (error) {
+      logExportError("PDF", error);
       setStatus(error instanceof Error ? error.message : "PDF export failed.");
     }
   };
 
   const handleDocx = async () => {
     const element = getPreviewElement();
-    if (!element) return;
+    if (!element) {
+      const error = new Error("Resume preview element #resume-preview-sheet was not found.");
+      logExportError("DOCX", error);
+      setStatus(error.message);
+      return;
+    }
     try {
       setStatus("Generating visual DOCX...");
       await exportResumeAsDocx(element, resume);
       setStatus("DOCX downloaded.");
     } catch (error) {
+      logExportError("DOCX", error);
       setStatus(error instanceof Error ? error.message : "DOCX export failed.");
     }
   };
 
   const handleDoc = async () => {
     const element = getPreviewElement();
-    if (!element) return;
+    if (!element) {
+      const error = new Error("Resume preview element #resume-preview-sheet was not found.");
+      logExportError("DOC", error);
+      setStatus(error.message);
+      return;
+    }
     try {
       setStatus("Generating visual DOC...");
       await exportResumeAsDoc(element, resume);
       setStatus("DOC downloaded.");
     } catch (error) {
+      logExportError("DOC", error);
       setStatus(error instanceof Error ? error.message : "DOC export failed.");
     }
   };
