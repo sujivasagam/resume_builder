@@ -12,7 +12,7 @@ export function MinimalistResume({ resume }: { resume: ResumeDocument }) {
         accent: "text-stone-900",
         body: "text-stone-500",
         section: "border-stone-200 bg-white",
-        font: "font-[Inter]",
+        font: "font-sans",
         layout: "single",
       }}
     />

@@ -12,7 +12,7 @@ export function ElegantResume({ resume }: { resume: ResumeDocument }) {
         accent: "text-[#c26d3a]",
         body: "text-[#5e4c40]",
         section: "border-[#ead8c8] bg-white/70",
-        font: "font-[Playfair_Display]",
+        font: "font-serif",
         layout: "hero",
       }}
     />

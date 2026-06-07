@@ -13,7 +13,7 @@ export function TechnicalResume({ resume }: { resume: ResumeDocument }) {
         body: "text-slate-300",
         section: "border-emerald-400/15 bg-emerald-400/5",
         sidebar: "rounded-[1.5rem] bg-[#0f172a] p-6",
-        font: "font-[JetBrains_Mono]",
+        font: "font-mono",
         layout: "split",
       }}
     />

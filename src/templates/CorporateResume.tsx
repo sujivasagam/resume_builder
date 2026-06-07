@@ -12,7 +12,7 @@ export function CorporateResume({ resume }: { resume: ResumeDocument }) {
         accent: "text-sky-700",
         body: "text-slate-600",
         section: "border-sky-100 bg-sky-50/50",
-        font: "font-[Inter]",
+        font: "font-sans",
         layout: "split",
       }}
     />

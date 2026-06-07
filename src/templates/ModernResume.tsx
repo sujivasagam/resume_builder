@@ -12,7 +12,7 @@ export function ModernResume({ resume }: { resume: ResumeDocument }) {
         accent: "text-orange-500",
         body: "text-zinc-600",
         section: "border-orange-100 bg-orange-50/60",
-        font: "font-[Inter]",
+        font: "font-sans",
         layout: "hero",
       }}
     />

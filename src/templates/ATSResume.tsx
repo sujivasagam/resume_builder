@@ -12,7 +12,7 @@ export function ATSResume({ resume }: { resume: ResumeDocument }) {
         accent: "text-black",
         body: "text-neutral-700",
         section: "border-neutral-300 bg-white",
-        font: "font-[Inter]",
+        font: "font-sans",
         layout: "single",
       }}
     />

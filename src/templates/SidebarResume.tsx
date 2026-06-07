@@ -13,7 +13,7 @@ export function SidebarResume({ resume }: { resume: ResumeDocument }) {
         body: "text-slate-300",
         section: "border-white/10 bg-white/5",
         sidebar: "rounded-[1.5rem] bg-white/5 p-6",
-        font: "font-[Inter]",
+        font: "font-sans",
         layout: "split",
       }}
     />

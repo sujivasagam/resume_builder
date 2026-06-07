@@ -1,14 +1,10 @@
 import {
   AlignmentType,
   Document as WordDocument,
-  ExternalHyperlink,
-  HeadingLevel,
+  ImageRun,
   Packer,
+  PageBreak,
   Paragraph,
-  TabStopPosition,
-  TabStopType,
-  TextRun,
-  UnderlineType,
 } from "docx";
 import { ResumeDocument } from "../types";
 
@@ -17,27 +13,22 @@ declare global {
     jspdf?: {
       jsPDF: new (options?: Record<string, unknown>) => {
         internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
+        addImage: (...args: unknown[]) => void;
         addPage: () => void;
-        line: (x1: number, y1: number, x2: number, y2: number) => void;
         save: (fileName: string) => void;
-        setDrawColor: (r: number, g?: number, b?: number) => void;
-        setFont: (fontName: string, fontStyle?: string) => void;
-        setFontSize: (size: number) => void;
-        setTextColor: (r: number, g?: number, b?: number) => void;
-        splitTextToSize: (text: string, size: number) => string[];
-        text: (text: string | string[], x: number, y: number) => void;
       };
     };
   }
 }
 
-const PDF_MARGIN = 40;
-const PDF_LINE_HEIGHT = 16;
-const PDF_SECTION_GAP = 14;
-
+const SNAPSHOT_PAGE_WIDTH_PX = 1500;
+const SNAPSHOT_PAGE_HEIGHT_PX = 2120;
+const PDF_MARGIN_PT = 18;
 const DOCX_PAGE_WIDTH_TWIP = 11906;
 const DOCX_PAGE_HEIGHT_TWIP = 16838;
-const DOCX_MARGIN_TWIP = 720;
+const DOCX_MARGIN_TWIP = 360;
+const DOCX_IMAGE_WIDTH_PX = 718;
+type ExportSurface = "pdf" | "doc" | "docx";
 
 async function loadScript(src: string) {
   const absoluteSrc = new URL(src, window.location.href).href;
@@ -120,384 +111,194 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
-function compact(values: Array<string | undefined | null>) {
-  return values.map((value) => value?.trim()).filter((value): value is string => Boolean(value));
+async function waitForPreviewReady() {
+  if ("fonts" in document) {
+    try {
+      await (document as Document & { fonts: FontFaceSet }).fonts.ready;
+    } catch {
+      // no-op
+    }
+  }
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
-function buildContactLines(resume: ResumeDocument) {
-  const { personal } = resume;
-  const lineOne = compact([personal.email, personal.phone, personal.location]);
-  const lineTwo = compact([personal.linkedin, personal.github, personal.portfolio]);
-  return [lineOne, lineTwo].filter((line) => line.length > 0);
-}
+function normalizeInteractiveCloneForStaticExport(clone: HTMLElement) {
+  if (clone.dataset.templateId !== "interactive") {
+    return;
+  }
 
-function bulletLines(values: string[]) {
-  return values
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .map((value) => `- ${value}`);
-}
-
-function buildProjectLines(resume: ResumeDocument) {
-  return resume.projects.flatMap((project) => {
-    const lines = [
-      `${project.name}${project.url ? ` (${project.url})` : ""}`,
-      project.summary,
-      project.stack.length ? `Stack: ${project.stack.join(", ")}` : "",
-      ...bulletLines(project.outcomes),
-    ].filter(Boolean);
-
-    return lines;
+  clone.querySelector("nav")?.remove();
+  clone.querySelectorAll('a[href^="#"]').forEach((link) => {
+    const replacement = document.createElement("span");
+    replacement.className = link.className;
+    replacement.textContent = link.textContent;
+    link.replaceWith(replacement);
   });
 }
 
-function buildCertificationLines(resume: ResumeDocument) {
-  return resume.certifications.map((certification) =>
-    compact([
-      certification.name,
-      certification.issuer,
-      certification.date,
-      certification.credentialId ? `Credential ID: ${certification.credentialId}` : "",
-    ]).join(" | ")
-  );
+function inlineComputedStyles(source: HTMLElement, target: HTMLElement) {
+  const computedStyle = getComputedStyle(source);
+
+  Array.from(computedStyle).forEach((property) => {
+    const value = computedStyle.getPropertyValue(property);
+    const priority = computedStyle.getPropertyPriority(property);
+    if (!value) {
+      return;
+    }
+
+    target.style.setProperty(property, value, priority);
+  });
+
+  target.removeAttribute("class");
+
+  const sourceChildren = Array.from(source.children) as HTMLElement[];
+  const targetChildren = Array.from(target.children) as HTMLElement[];
+  sourceChildren.forEach((child, index) => {
+    const matchingTarget = targetChildren[index];
+    if (matchingTarget) {
+      inlineComputedStyles(child, matchingTarget);
+    }
+  });
 }
 
-function buildEducationLines(resume: ResumeDocument) {
-  return resume.education.map((education) =>
-    compact([education.degree, education.school, education.period, education.score]).join(" | ")
-  );
+function createExportClone(element: HTMLElement, format: ExportSurface) {
+  const rect = element.getBoundingClientRect();
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "fixed";
+  wrapper.style.left = "-100000px";
+  wrapper.style.top = "0";
+  wrapper.style.zIndex = "-1";
+  wrapper.style.pointerEvents = "none";
+  wrapper.style.background = "#ffffff";
+  wrapper.style.padding = "0";
+  wrapper.style.margin = "0";
+  wrapper.style.width = `${Math.ceil(rect.width)}px`;
+  wrapper.style.overflow = "visible";
+
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone.style.width = `${Math.ceil(rect.width)}px`;
+  clone.style.maxWidth = "none";
+  clone.style.margin = "0";
+
+  normalizeInteractiveCloneForStaticExport(clone);
+
+  wrapper.appendChild(clone);
+  document.body.appendChild(wrapper);
+  inlineComputedStyles(element, clone);
+
+  return { wrapper, clone, width: Math.ceil(rect.width) };
 }
 
-function buildResumeHtml(resume: ResumeDocument) {
-  const contactLines = buildContactLines(resume);
-  const experienceMarkup = resume.experience
-    .map(
-      (experience) => `
-        <div class="item">
-          <div class="item-head">
-            <div>
-              <h3>${escapeHtml(experience.role)}</h3>
-              <p class="sub">${escapeHtml(experience.company)}</p>
-            </div>
-            <div class="meta">
-              ${escapeHtml(`${experience.start} - ${experience.end}`)}<br />
-              ${escapeHtml(experience.location)}
-            </div>
-          </div>
-          <ul>${bulletLines(experience.highlights).map((line) => `<li>${escapeHtml(line.slice(2))}</li>`).join("")}</ul>
+async function renderCloneToCanvas(clone: HTMLElement, width: number) {
+  const height = Math.max(1, Math.ceil(clone.scrollHeight));
+  const scale = 2;
+  const clonedMarkup = new XMLSerializer().serializeToString(clone);
+  const svgMarkup = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <foreignObject width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;background:#ffffff;overflow:hidden;">
+          ${clonedMarkup}
         </div>
-      `
-    )
-    .join("");
-
-  const projectsMarkup = resume.projects
-    .map(
-      (project) => `
-        <div class="item">
-          <h3>${escapeHtml(project.name)}</h3>
-          <p class="sub">${project.url ? escapeHtml(project.url) : ""}</p>
-          <p>${escapeHtml(project.summary)}</p>
-          ${project.stack.length ? `<p><strong>Stack:</strong> ${escapeHtml(project.stack.join(", "))}</p>` : ""}
-          ${project.outcomes.length ? `<ul>${project.outcomes.map((outcome) => `<li>${escapeHtml(outcome)}</li>`).join("")}</ul>` : ""}
-        </div>
-      `
-    )
-    .join("");
-
-  const section = (title: string, body: string) => (body.trim() ? `<section><h2>${escapeHtml(title)}</h2>${body}</section>` : "");
-
-  return `
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${escapeHtml(resume.name)}</title>
-        <style>
-          @page { size: A4; margin: 0.6in; }
-          body {
-            margin: 0;
-            color: #0f172a;
-            background: #ffffff;
-            font-family: "Segoe UI", Arial, sans-serif;
-            line-height: 1.45;
-          }
-          .sheet {
-            max-width: 8in;
-            margin: 0 auto;
-          }
-          header {
-            border-bottom: 2px solid #1d4ed8;
-            padding-bottom: 14px;
-            margin-bottom: 18px;
-          }
-          h1 {
-            margin: 0;
-            font-size: 28px;
-            line-height: 1.1;
-          }
-          .role {
-            margin-top: 6px;
-            font-size: 14px;
-            color: #334155;
-            font-weight: 600;
-          }
-          .contact-line {
-            margin-top: 8px;
-            font-size: 11px;
-            color: #475569;
-          }
-          section {
-            margin-top: 18px;
-          }
-          h2 {
-            margin: 0 0 8px;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.12em;
-            color: #1d4ed8;
-          }
-          h3 {
-            margin: 0;
-            font-size: 14px;
-          }
-          p {
-            margin: 6px 0 0;
-            font-size: 12px;
-          }
-          .sub {
-            color: #475569;
-          }
-          .item {
-            margin-top: 10px;
-          }
-          .item-head {
-            display: flex;
-            justify-content: space-between;
-            gap: 16px;
-          }
-          .meta {
-            text-align: right;
-            font-size: 11px;
-            color: #475569;
-            white-space: nowrap;
-          }
-          ul {
-            margin: 6px 0 0 18px;
-            padding: 0;
-          }
-          li {
-            margin-top: 4px;
-            font-size: 12px;
-          }
-          .chips {
-            margin-top: 8px;
-          }
-          .chip {
-            display: inline-block;
-            margin: 0 6px 6px 0;
-            padding: 4px 8px;
-            border-radius: 999px;
-            background: #eff6ff;
-            color: #1e3a8a;
-            font-size: 11px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="sheet">
-          <header>
-            <h1>${escapeHtml(resume.personal.fullName || resume.name)}</h1>
-            <div class="role">${escapeHtml(resume.personal.title || resume.targetRole)}</div>
-            ${contactLines.map((line) => `<div class="contact-line">${line.map(escapeHtml).join(" | ")}</div>`).join("")}
-          </header>
-
-          ${section("Professional Summary", `<p>${escapeHtml(resume.personal.summary || "")}</p>`)}
-          ${section("Experience", experienceMarkup)}
-          ${section("Projects", projectsMarkup)}
-          ${section("Skills", `<div class="chips">${resume.skills.map((skill) => `<span class="chip">${escapeHtml(skill)}</span>`).join("")}</div>`)}
-          ${section("Education", buildEducationLines(resume).map((line) => `<p>${escapeHtml(line)}</p>`).join(""))}
-          ${section("Certifications", buildCertificationLines(resume).map((line) => `<p>${escapeHtml(line)}</p>`).join(""))}
-          ${section("Achievements", resume.achievements.length ? `<ul>${resume.achievements.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "")}
-          ${section("Awards", resume.awards.length ? `<ul>${resume.awards.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "")}
-          ${section("Languages", resume.languages.length ? `<p>${escapeHtml(resume.languages.join(", "))}</p>` : "")}
-          ${section("References", resume.references.length ? `<p>${escapeHtml(resume.references.join(", "))}</p>` : "")}
-        </div>
-      </body>
-    </html>
+      </foreignObject>
+    </svg>
   `;
+
+  const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const nextImage = new Image();
+      nextImage.onload = () => resolve(nextImage);
+      nextImage.onerror = () => reject(new Error("Unable to render resume preview for export."));
+      nextImage.src = url;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(width * scale);
+    canvas.height = Math.ceil(height * scale);
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      throw new Error("Unable to create export canvas context.");
+    }
+
+    context.scale(scale, scale);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
-function buildDocxParagraphs(resume: ResumeDocument) {
-  const paragraphs: Paragraph[] = [];
-  const contactLines = buildContactLines(resume);
+function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
+  const pages: HTMLCanvasElement[] = [];
+  const totalPages = Math.max(1, Math.ceil(canvas.height / targetPageHeightPx));
 
-  paragraphs.push(
-    new Paragraph({
-      text: resume.personal.fullName || resume.name,
-      heading: HeadingLevel.TITLE,
-      spacing: { after: 120 },
-    })
-  );
+  for (let pageIndex = 0; pageIndex < totalPages; pageIndex += 1) {
+    const page = document.createElement("canvas");
+    const sliceHeight = Math.min(targetPageHeightPx, canvas.height - pageIndex * targetPageHeightPx);
+    page.width = canvas.width;
+    page.height = sliceHeight;
 
-  paragraphs.push(
-    new Paragraph({
-      children: [
-        new TextRun({
-          text: resume.personal.title || resume.targetRole,
-          bold: true,
-          size: 24,
-          color: "334155",
-        }),
-      ],
-      spacing: { after: 180 },
-    })
-  );
+    const context = page.getContext("2d");
+    if (!context) {
+      continue;
+    }
 
-  contactLines.forEach((line) => {
-    paragraphs.push(
-      new Paragraph({
-        children: line.flatMap((item, index) => {
-          const isLink = item.includes(".") && !item.includes(" ");
-          const children = isLink
-            ? [
-                new ExternalHyperlink({
-                  link: item.startsWith("http") ? item : `https://${item}`,
-                  children: [
-                    new TextRun({
-                      text: item,
-                      color: "1D4ED8",
-                      underline: { type: UnderlineType.SINGLE },
-                    }),
-                  ],
-                }),
-              ]
-            : [new TextRun({ text: item })];
-
-          if (index === line.length - 1) {
-            return children;
-          }
-
-          return [...children, new TextRun({ text: " | " })];
-        }),
-        spacing: { after: 80 },
-      })
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, page.width, page.height);
+    context.drawImage(
+      canvas,
+      0,
+      pageIndex * targetPageHeightPx,
+      canvas.width,
+      sliceHeight,
+      0,
+      0,
+      canvas.width,
+      sliceHeight
     );
-  });
 
-  const addHeading = (text: string) => {
-    paragraphs.push(
-      new Paragraph({
-        text,
-        heading: HeadingLevel.HEADING_2,
-        thematicBreak: true,
-        spacing: { before: 220, after: 120 },
-      })
-    );
-  };
-
-  const addBodyParagraph = (text: string, options?: { bullet?: boolean; bold?: boolean; indent?: number }) => {
-    paragraphs.push(
-      new Paragraph({
-        children: [
-          new TextRun({
-            text,
-            bold: options?.bold,
-          }),
-        ],
-        bullet: options?.bullet ? { level: 0 } : undefined,
-        indent: options?.indent ? { left: options.indent } : undefined,
-        spacing: { after: 70 },
-      })
-    );
-  };
-
-  if (resume.personal.summary) {
-    addHeading("Professional Summary");
-    addBodyParagraph(resume.personal.summary);
+    pages.push(page);
   }
 
-  if (resume.experience.length) {
-    addHeading("Experience");
-    resume.experience.forEach((experience) => {
-      paragraphs.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: experience.role, bold: true }),
-            new TextRun({ text: `\t${experience.start} - ${experience.end}` }),
-          ],
-          tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
-          spacing: { after: 60 },
-        })
-      );
-      addBodyParagraph(`${experience.company} | ${experience.location}`);
-      experience.highlights.forEach((highlight) => addBodyParagraph(highlight, { bullet: true, indent: 360 }));
-    });
-  }
-
-  if (resume.projects.length) {
-    addHeading("Projects");
-    resume.projects.forEach((project) => {
-      addBodyParagraph(project.name, { bold: true });
-      if (project.url) {
-        addBodyParagraph(project.url);
-      }
-      addBodyParagraph(project.summary);
-      if (project.stack.length) {
-        addBodyParagraph(`Stack: ${project.stack.join(", ")}`);
-      }
-      project.outcomes.forEach((outcome) => addBodyParagraph(outcome, { bullet: true, indent: 360 }));
-    });
-  }
-
-  if (resume.skills.length) {
-    addHeading("Skills");
-    addBodyParagraph(resume.skills.join(", "));
-  }
-
-  if (resume.education.length) {
-    addHeading("Education");
-    resume.education.forEach((education) => {
-      addBodyParagraph(compact([education.degree, education.school, education.period, education.score]).join(" | "));
-    });
-  }
-
-  if (resume.certifications.length) {
-    addHeading("Certifications");
-    resume.certifications.forEach((certification) => {
-      addBodyParagraph(compact([certification.name, certification.issuer, certification.date, certification.credentialId]).join(" | "));
-    });
-  }
-
-  if (resume.achievements.length) {
-    addHeading("Achievements");
-    resume.achievements.forEach((achievement) => addBodyParagraph(achievement, { bullet: true }));
-  }
-
-  if (resume.awards.length) {
-    addHeading("Awards");
-    resume.awards.forEach((award) => addBodyParagraph(award, { bullet: true }));
-  }
-
-  if (resume.languages.length) {
-    addHeading("Languages");
-    addBodyParagraph(resume.languages.join(", "));
-  }
-
-  if (resume.references.length) {
-    addHeading("References");
-    addBodyParagraph(resume.references.join(", "));
-  }
-
-  return paragraphs;
+  return pages;
 }
 
-export async function exportResumeAsPdf(_element: HTMLElement, fileName: string, resume?: ResumeDocument) {
-  if (!resume) {
-    throw new Error("Resume data is required for PDF export.");
+async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface) {
+  await waitForPreviewReady();
+
+  if (!element.isConnected) {
+    throw new Error("Resume preview is not mounted. Open the Export view and try again.");
   }
 
+  const previousOverflow = document.body.style.overflow;
+  document.body.style.overflow = "visible";
+  const { wrapper, clone, width } = createExportClone(element, format);
+
+  try {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return await renderCloneToCanvas(clone, width);
+  } finally {
+    wrapper.remove();
+    document.body.style.overflow = previousOverflow;
+  }
+}
+
+async function createSnapshotPages(element: HTMLElement, format: ExportSurface) {
+  const canvas = await capturePreviewCanvas(element, format);
+  const pageHeightPx = Math.floor((SNAPSHOT_PAGE_HEIGHT_PX / SNAPSHOT_PAGE_WIDTH_PX) * canvas.width);
+  return { canvas, pages: sliceCanvas(canvas, pageHeightPx) };
+}
+
+export async function exportResumeAsPdf(element: HTMLElement, fileName: string, _resume?: ResumeDocument) {
   await ensurePdfDependency();
-  console.info("[Resume Export] Using structured data renderer for PDF export");
+  console.info("[Resume Export] Using preview snapshot renderer for PDF export");
 
+  const { canvas } = await createSnapshotPages(element, "pdf");
   const pdf = new window.jspdf!.jsPDF({
     orientation: "portrait",
     unit: "pt",
@@ -507,116 +308,27 @@ export async function exportResumeAsPdf(_element: HTMLElement, fileName: string,
 
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
-  const contentWidth = pageWidth - PDF_MARGIN * 2;
-  let cursorY = PDF_MARGIN;
+  const renderWidth = pageWidth - PDF_MARGIN_PT * 2;
+  const ratio = renderWidth / canvas.width;
+  const pageHeightPx = Math.floor((pageHeight - PDF_MARGIN_PT * 2) / ratio);
+  const pages = sliceCanvas(canvas, pageHeightPx);
 
-  const ensureSpace = (requiredHeight: number) => {
-    if (cursorY + requiredHeight <= pageHeight - PDF_MARGIN) {
-      return;
+  pages.forEach((pageCanvas, index) => {
+    if (index > 0) {
+      pdf.addPage();
     }
 
-    pdf.addPage();
-    cursorY = PDF_MARGIN;
-  };
-
-  const addWrappedText = (text: string, options?: { size?: number; bold?: boolean; color?: [number, number, number] }) => {
-    if (!text.trim()) {
-      return;
-    }
-
-    const size = options?.size ?? 11;
-    const color = options?.color ?? [15, 23, 42];
-    const style = options?.bold ? "bold" : "normal";
-    pdf.setFont("helvetica", style);
-    pdf.setFontSize(size);
-    pdf.setTextColor(color[0], color[1], color[2]);
-
-    const lines = pdf.splitTextToSize(text, contentWidth);
-    const blockHeight = lines.length * (size + 3);
-    ensureSpace(blockHeight);
-    pdf.text(lines, PDF_MARGIN, cursorY);
-    cursorY += blockHeight;
-  };
-
-  const addSectionTitle = (title: string) => {
-    cursorY += PDF_SECTION_GAP;
-    ensureSpace(30);
-    pdf.setDrawColor(29, 78, 216);
-    pdf.line(PDF_MARGIN, cursorY, pageWidth - PDF_MARGIN, cursorY);
-    cursorY += 14;
-    addWrappedText(title.toUpperCase(), { size: 12, bold: true, color: [29, 78, 216] });
-    cursorY += 2;
-  };
-
-  addWrappedText(resume.personal.fullName || resume.name, { size: 22, bold: true });
-  addWrappedText(resume.personal.title || resume.targetRole, { size: 12, bold: true, color: [51, 65, 85] });
-  buildContactLines(resume).forEach((line) => addWrappedText(line.join(" | "), { size: 10, color: [71, 85, 105] }));
-
-  if (resume.personal.summary) {
-    addSectionTitle("Professional Summary");
-    addWrappedText(resume.personal.summary);
-  }
-
-  if (resume.experience.length) {
-    addSectionTitle("Experience");
-    resume.experience.forEach((experience) => {
-      addWrappedText(`${experience.role} | ${experience.company}`, { size: 12, bold: true });
-      addWrappedText(`${experience.start} - ${experience.end} | ${experience.location}`, { size: 10, color: [71, 85, 105] });
-      bulletLines(experience.highlights).forEach((line) => addWrappedText(line));
-      cursorY += 4;
-    });
-  }
-
-  if (resume.projects.length) {
-    addSectionTitle("Projects");
-    resume.projects.forEach((project) => {
-      addWrappedText(project.name, { size: 12, bold: true });
-      if (project.url) {
-        addWrappedText(project.url, { size: 10, color: [29, 78, 216] });
-      }
-      addWrappedText(project.summary);
-      if (project.stack.length) {
-        addWrappedText(`Stack: ${project.stack.join(", ")}`, { size: 10, color: [71, 85, 105] });
-      }
-      bulletLines(project.outcomes).forEach((line) => addWrappedText(line));
-      cursorY += 4;
-    });
-  }
-
-  if (resume.skills.length) {
-    addSectionTitle("Skills");
-    addWrappedText(resume.skills.join(", "));
-  }
-
-  if (resume.education.length) {
-    addSectionTitle("Education");
-    buildEducationLines(resume).forEach((line) => addWrappedText(line));
-  }
-
-  if (resume.certifications.length) {
-    addSectionTitle("Certifications");
-    buildCertificationLines(resume).forEach((line) => addWrappedText(line));
-  }
-
-  if (resume.achievements.length) {
-    addSectionTitle("Achievements");
-    bulletLines(resume.achievements).forEach((line) => addWrappedText(line));
-  }
-
-  if (resume.awards.length) {
-    addSectionTitle("Awards");
-    bulletLines(resume.awards).forEach((line) => addWrappedText(line));
-  }
-
-  if (resume.languages.length) {
-    addSectionTitle("Languages");
-    addWrappedText(resume.languages.join(", "));
-  }
-
-  if (resume.references.length) {
-    addSectionTitle("References");
-    addWrappedText(resume.references.join(", "));
-  }
+    pdf.addImage(
+      pageCanvas.toDataURL("image/png"),
+      "PNG",
+      PDF_MARGIN_PT,
+      PDF_MARGIN_PT,
+      renderWidth,
+      pageCanvas.height * ratio,
+      undefined,
+      "FAST"
+    );
+  });
 
   pdf.save(sanitizeFileName(fileName.replace(/\.pdf$/i, ""), "pdf"));
 }
@@ -669,7 +381,7 @@ export function exportResumeAsInteractiveHtml(element: HTMLElement, fileName: st
             background: rgba(15, 23, 42, 0.92);
             color: white;
             padding: 14px 18px;
-            font-family: Inter, sans-serif;
+            font-family: "Segoe UI", Arial, sans-serif;
           }
           .interactive-export-helper a {
             color: white;
@@ -707,8 +419,18 @@ export function exportResumeAsInteractiveHtml(element: HTMLElement, fileName: st
   downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), sanitizeFileName(fileName.replace(/\.html$/i, ""), "html"));
 }
 
-export async function exportResumeAsDocx(_element: HTMLElement, resume: ResumeDocument) {
-  console.info("[Resume Export] Using structured data renderer for DOCX export");
+async function canvasToUint8Array(canvas: HTMLCanvasElement) {
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) {
+    throw new Error("Unable to serialize preview image.");
+  }
+  const buffer = await blob.arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
+export async function exportResumeAsDocx(element: HTMLElement, resume: ResumeDocument) {
+  console.info("[Resume Export] Using preview snapshot renderer for DOCX export");
+  const { pages } = await createSnapshotPages(element, "docx");
 
   const doc = new WordDocument({
     sections: [
@@ -727,7 +449,32 @@ export async function exportResumeAsDocx(_element: HTMLElement, resume: ResumeDo
             },
           },
         },
-        children: buildDocxParagraphs(resume),
+        children: await Promise.all(
+          pages.flatMap((pageCanvas, index) => {
+            const width = DOCX_IMAGE_WIDTH_PX;
+            const height = Math.round((pageCanvas.height / pageCanvas.width) * width);
+
+            const paragraph = canvasToUint8Array(pageCanvas).then(
+              (bytes) =>
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  children: [
+                    new ImageRun({
+                      data: bytes,
+                      type: "png",
+                      transformation: { width, height },
+                    }),
+                  ],
+                })
+            );
+
+            if (index === pages.length - 1) {
+              return [paragraph];
+            }
+
+            return [paragraph, Promise.resolve(new Paragraph({ children: [new PageBreak()] }))];
+          })
+        ),
       },
     ],
   });
@@ -736,8 +483,28 @@ export async function exportResumeAsDocx(_element: HTMLElement, resume: ResumeDo
   downloadBlob(blob, sanitizeFileName(resume.name, "docx"));
 }
 
-export async function exportResumeAsDoc(_element: HTMLElement, resume: ResumeDocument) {
-  console.info("[Resume Export] Using structured data renderer for DOC export");
-  const html = buildResumeHtml(resume);
+export async function exportResumeAsDoc(element: HTMLElement, resume: ResumeDocument) {
+  console.info("[Resume Export] Using preview snapshot renderer for DOC export");
+  const { pages } = await createSnapshotPages(element, "doc");
+  const images = pages.map((pageCanvas) => pageCanvas.toDataURL("image/png"));
+  const html = `
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${escapeHtml(resume.name)}</title>
+        <style>
+          @page { size: A4 portrait; margin: 0.25in; }
+          body { margin: 0; padding: 0; background: #ffffff; }
+          .page { width: 7.77in; margin: 0 auto 0.2in; page-break-after: always; }
+          .page:last-child { page-break-after: auto; }
+          .page img { display: block; width: 100%; height: auto; }
+        </style>
+      </head>
+      <body>
+        ${images.map((src) => `<div class="page"><img src="${src}" alt="${escapeHtml(resume.name)}" /></div>`).join("")}
+      </body>
+    </html>
+  `;
+
   downloadBlob(new Blob([html], { type: "application/msword" }), sanitizeFileName(resume.name, "doc"));
 }

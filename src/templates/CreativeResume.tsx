@@ -12,7 +12,7 @@ export function CreativeResume({ resume }: { resume: ResumeDocument }) {
         accent: "text-[#7c3aed]",
         body: "text-[#364152]",
         section: "border-white/70 bg-white/70",
-        font: "font-[Outfit]",
+        font: "font-sans",
         layout: "hero",
       }}
     />

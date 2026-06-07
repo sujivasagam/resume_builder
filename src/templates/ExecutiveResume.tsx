@@ -12,7 +12,7 @@ export function ExecutiveResume({ resume }: { resume: ResumeDocument }) {
         accent: "text-blue-400",
         body: "text-slate-200",
         section: "border-slate-200 bg-slate-50/70",
-        font: "font-[Outfit]",
+        font: "font-sans",
         layout: "split",
       }}
     />

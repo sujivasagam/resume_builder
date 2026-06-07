@@ -96,12 +96,12 @@ export function ExportCenter({ resume }: Props) {
         </button>
       </div>
       <p className="text-sm text-slate-500">
-        PDF, DOC, and DOCX now use a structured resume export flow for reliable downloads. HTML still gives the closest match to the live preview plus in-browser section navigation.
+        PDF, DOC, and DOCX now use the live preview as the visual export source so the downloaded file matches what you see more closely. HTML still keeps the live browser interaction behavior.
       </p>
       {status ? <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700 dark:bg-slate-900 dark:text-slate-200">{status}</div> : null}
       {resume.templateId === "interactive" ? (
         <p className="text-sm text-slate-500">
-          For the Interactive template, PDF, DOC, and DOCX now export a clean document version of the same resume content. HTML still keeps the browser-style section navigation.
+          For the Interactive template, PDF, DOC, and DOCX export the same visual design without the browser-only navigation behavior. HTML still keeps the browser-style section navigation.
         </p>
       ) : null}
     </section>
