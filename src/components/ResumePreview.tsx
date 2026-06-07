@@ -18,7 +18,7 @@ export function ResumePreview({ resume, compact }: Props) {
       </div>
 
       <div className={`preview-stage ${compact ? "preview-stage-compact" : ""}`}>
-        <div id="resume-preview-sheet" className="mx-auto w-full max-w-[920px]">
+        <div id="resume-preview-sheet" data-template-id={resume.templateId} className="mx-auto w-full max-w-[920px]">
           {renderTemplate(resume, resume.templateId)}
         </div>
       </div>

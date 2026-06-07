@@ -6,21 +6,9 @@ import {
   Paragraph,
   Document as WordDocument,
 } from "docx";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { ResumeDocument } from "../types";
-
-declare global {
-  interface Window {
-    html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
-    jspdf?: {
-      jsPDF: new (options?: Record<string, unknown>) => {
-        internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
-        addImage: (...args: unknown[]) => void;
-        addPage: () => void;
-        save: (fileName: string) => void;
-      };
-    };
-  }
-}
 
 const SNAPSHOT_PAGE_WIDTH_PX = 1500;
 const SNAPSHOT_PAGE_HEIGHT_PX = 2120;
@@ -29,6 +17,7 @@ const DOCX_PAGE_WIDTH_TWIP = 11906;
 const DOCX_PAGE_HEIGHT_TWIP = 16838;
 const DOCX_MARGIN_TWIP = 360;
 const DOCX_IMAGE_WIDTH_PX = 718;
+type ExportSurface = "pdf" | "doc" | "docx";
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -57,69 +46,6 @@ function escapeHtml(value: string) {
     .replace(/'/g, "&#39;");
 }
 
-async function loadScript(src: string) {
-  const absoluteSrc = new URL(src, window.location.href).href;
-  const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
-  const matchingAbsolute = document.querySelector(`script[src="${absoluteSrc}"]`) as HTMLScriptElement | null;
-  const target = existing ?? matchingAbsolute;
-
-  if (src.includes("html2canvas") && window.html2canvas) {
-    return;
-  }
-
-  if (src.includes("jspdf") && window.jspdf?.jsPDF) {
-    return;
-  }
-  if (target) {
-    if (target.dataset.loaded === "true") {
-      return;
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => reject(new Error(`Timed out loading ${src}`)), 10000);
-      const handleLoad = () => {
-        window.clearTimeout(timeout);
-        target.dataset.loaded = "true";
-        resolve();
-      };
-      const handleError = () => {
-        window.clearTimeout(timeout);
-        reject(new Error(`Failed to load ${src}`));
-      };
-
-      target.addEventListener("load", handleLoad, { once: true });
-      target.addEventListener("error", handleError, { once: true });
-    });
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = absoluteSrc;
-    script.async = true;
-    script.onload = () => {
-      script.dataset.loaded = "true";
-      resolve();
-    };
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
-    document.head.appendChild(script);
-  });
-}
-
-async function ensureSnapshotDependencies() {
-  if (!window.html2canvas) {
-    await loadScript("/vendor/html2canvas.min.js");
-  }
-
-  if (!window.jspdf?.jsPDF) {
-    await loadScript("/vendor/jspdf.umd.min.js");
-  }
-
-  if (!window.html2canvas || !window.jspdf?.jsPDF) {
-    throw new Error("Export libraries could not be loaded.");
-  }
-}
-
 async function waitForPreviewReady() {
   if ("fonts" in document) {
     try {
@@ -131,7 +57,29 @@ async function waitForPreviewReady() {
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
-function createExportClone(element: HTMLElement) {
+function normalizeInteractiveCloneForStaticExport(clone: HTMLElement, format: ExportSurface) {
+  const templateId = clone.dataset.templateId;
+  if (templateId !== "interactive") {
+    return;
+  }
+
+  const nav = clone.querySelector("nav");
+  nav?.remove();
+
+  const eyebrow = Array.from(clone.querySelectorAll("p")).find((node) => node.textContent?.trim() === "Interactive Resume");
+  if (eyebrow) {
+    eyebrow.textContent = format === "pdf" ? "Resume" : format === "doc" ? "Static Resume" : "Document Resume";
+  }
+
+  clone.querySelectorAll('a[href^="#"]').forEach((link) => {
+    const replacement = document.createElement("span");
+    replacement.className = link.className;
+    replacement.textContent = link.textContent;
+    link.replaceWith(replacement);
+  });
+}
+
+function createExportClone(element: HTMLElement, format: ExportSurface) {
   const rect = element.getBoundingClientRect();
   const wrapper = document.createElement("div");
   wrapper.style.position = "fixed";
@@ -149,6 +97,7 @@ function createExportClone(element: HTMLElement) {
   clone.style.width = `${Math.ceil(rect.width)}px`;
   clone.style.maxWidth = "none";
   clone.style.margin = "0";
+  normalizeInteractiveCloneForStaticExport(clone, format);
 
   wrapper.appendChild(clone);
   document.body.appendChild(wrapper);
@@ -191,17 +140,20 @@ function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
   return pages;
 }
 
-async function capturePreviewCanvas(element: HTMLElement) {
-  await ensureSnapshotDependencies();
+async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface) {
   await waitForPreviewReady();
+
+  if (!element.isConnected) {
+    throw new Error("Resume preview is not mounted. Open the Export view and try again.");
+  }
 
   const previousOverflow = document.body.style.overflow;
   document.body.style.overflow = "visible";
-  const { wrapper, clone, width } = createExportClone(element);
+  const { wrapper, clone, width } = createExportClone(element, format);
 
   try {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    return await window.html2canvas!(clone, {
+    return await html2canvas(clone, {
       scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
@@ -218,15 +170,15 @@ async function capturePreviewCanvas(element: HTMLElement) {
   }
 }
 
-async function createSnapshotPages(element: HTMLElement) {
-  const canvas = await capturePreviewCanvas(element);
+async function createSnapshotPages(element: HTMLElement, format: ExportSurface) {
+  const canvas = await capturePreviewCanvas(element, format);
   const pageHeightPx = Math.floor((SNAPSHOT_PAGE_HEIGHT_PX / SNAPSHOT_PAGE_WIDTH_PX) * canvas.width);
   return { canvas, pages: sliceCanvas(canvas, pageHeightPx) };
 }
 
 export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
-  const { canvas } = await createSnapshotPages(element);
-  const pdf = new window.jspdf!.jsPDF({
+  const { canvas } = await createSnapshotPages(element, "pdf");
+  const pdf = new jsPDF({
     orientation: "portrait",
     unit: "pt",
     format: "a4",
@@ -257,7 +209,7 @@ export async function exportResumeAsPdf(element: HTMLElement, fileName: string) 
     );
   });
 
-  pdf.save(fileName);
+  pdf.save(sanitizeFileName(fileName.replace(/\.pdf$/i, ""), "pdf"));
 }
 
 function getAbsoluteStylesMarkup() {
@@ -356,7 +308,7 @@ async function canvasToUint8Array(canvas: HTMLCanvasElement) {
 }
 
 export async function exportResumeAsDocx(element: HTMLElement, resume: ResumeDocument) {
-  const { pages } = await createSnapshotPages(element);
+  const { pages } = await createSnapshotPages(element, "docx");
   const doc = new WordDocument({
     sections: [
       {
@@ -416,7 +368,7 @@ export async function exportResumeAsDocx(element: HTMLElement, resume: ResumeDoc
 }
 
 export async function exportResumeAsDoc(element: HTMLElement, resume: ResumeDocument) {
-  const { pages } = await createSnapshotPages(element);
+  const { pages } = await createSnapshotPages(element, "doc");
   const images = pages.map((pageCanvas) => pageCanvas.toDataURL("image/png"));
   const html = `
     <html>
