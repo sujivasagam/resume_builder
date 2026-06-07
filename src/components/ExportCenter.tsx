@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ResumeDocument } from "../types";
-import { exportResumeAsDoc, exportResumeAsDocx, exportResumeAsInteractiveHtml, exportResumeAsPdf, exportResumeAsPng } from "../services/export";
+import { exportResumeAsDoc, exportResumeAsDocx, exportResumeAsInteractiveHtml, exportResumeAsPdf } from "../services/export";
 
 interface Props {
   resume: ResumeDocument;
@@ -20,18 +20,6 @@ export function ExportCenter({ resume }: Props) {
       setStatus("PDF downloaded.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "PDF export failed.");
-    }
-  };
-
-  const handlePng = async () => {
-    const element = getPreviewElement();
-    if (!element) return;
-    try {
-      setStatus("Generating PNG...");
-      await exportResumeAsPng(element, `${resume.name}.png`);
-      setStatus("PNG downloaded.");
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "PNG export failed.");
     }
   };
 
@@ -70,7 +58,7 @@ export function ExportCenter({ resume }: Props) {
     <section className="studio-panel export-panel space-y-5">
       <div>
         <p className="eyebrow">Export Center</p>
-        <h2 className="section-title">PDF, DOC, DOCX, PNG, HTML</h2>
+        <h2 className="section-title">PDF, DOC, DOCX, HTML</h2>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
         <button className="primary-button export-button" onClick={handleInteractiveHtml}>
@@ -84,9 +72,6 @@ export function ExportCenter({ resume }: Props) {
         </button>
         <button className="secondary-button export-button" onClick={handleDoc}>
           Export DOC
-        </button>
-        <button className="secondary-button export-button" onClick={handlePng}>
-          Export PNG
         </button>
       </div>
       <p className="text-sm text-slate-500">

@@ -6,21 +6,9 @@ import {
   Paragraph,
   Document as WordDocument,
 } from "docx";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { ResumeDocument } from "../types";
-
-declare global {
-  interface Window {
-    html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
-    jspdf?: {
-      jsPDF: new (options?: Record<string, unknown>) => {
-        internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
-        addImage: (...args: unknown[]) => void;
-        addPage: () => void;
-        save: (fileName: string) => void;
-      };
-    };
-  }
-}
 
 const SNAPSHOT_PAGE_WIDTH_PX = 1500;
 const SNAPSHOT_PAGE_HEIGHT_PX = 2120;
@@ -50,63 +38,6 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-async function loadScript(src: string) {
-  const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
-  if (existing) {
-    if (existing.dataset.loaded === "true") {
-      return;
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
-    });
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = src;
-    script.async = true;
-    script.onload = () => {
-      script.dataset.loaded = "true";
-      resolve();
-    };
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
-    document.head.appendChild(script);
-  });
-}
-
-async function ensureSnapshotDependencies() {
-  if (!window.html2canvas) {
-    try {
-      await loadScript("/vendor/html2canvas.min.js");
-    } catch {
-      try {
-        await loadScript("https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js");
-      } catch {
-        await loadScript("https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js");
-      }
-    }
-  }
-
-  if (!window.jspdf?.jsPDF) {
-    try {
-      await loadScript("/vendor/jspdf.umd.min.js");
-    } catch {
-      try {
-        await loadScript("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js");
-      } catch {
-        await loadScript("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
-      }
-    }
-  }
-
-  if (!window.html2canvas || !window.jspdf?.jsPDF) {
-    throw new Error("Export libraries could not be loaded. Please check your network and try again.");
-  }
 }
 
 async function waitForPreviewReady() {
@@ -156,7 +87,6 @@ function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
 }
 
 async function capturePreviewCanvas(element: HTMLElement) {
-  await ensureSnapshotDependencies();
   await waitForPreviewReady();
 
   const previousOverflow = document.body.style.overflow;
@@ -164,7 +94,7 @@ async function capturePreviewCanvas(element: HTMLElement) {
 
   try {
     const rect = element.getBoundingClientRect();
-    return await window.html2canvas!(element, {
+    return await html2canvas(element, {
       scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
@@ -188,7 +118,7 @@ async function createSnapshotPages(element: HTMLElement) {
 
 export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
   const { canvas } = await createSnapshotPages(element);
-  const pdf = new window.jspdf!.jsPDF({
+  const pdf = new jsPDF({
     orientation: "portrait",
     unit: "pt",
     format: "a4",
@@ -220,15 +150,6 @@ export async function exportResumeAsPdf(element: HTMLElement, fileName: string) 
   });
 
   pdf.save(fileName);
-}
-
-export async function exportResumeAsPng(element: HTMLElement, fileName: string) {
-  const canvas = await capturePreviewCanvas(element);
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (!blob) {
-    throw new Error("Unable to generate PNG.");
-  }
-  downloadBlob(blob, fileName);
 }
 
 function getAbsoluteStylesMarkup() {
