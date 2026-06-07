@@ -10,7 +10,6 @@ import { ResumeDocument } from "../types";
 
 declare global {
   interface Window {
-    html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
     jspdf?: {
       jsPDF: new (options?: Record<string, unknown>) => {
         internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
@@ -35,10 +34,6 @@ const UNSUPPORTED_COLOR_FUNCTION_PATTERN = /(oklch|oklab)\([^)]+\)/gi;
 async function loadScript(src: string) {
   const absoluteSrc = new URL(src, window.location.href).href;
   const existing = document.querySelector(`script[src="${src}"], script[src="${absoluteSrc}"]`) as HTMLScriptElement | null;
-
-  if (src.includes("html2canvas") && window.html2canvas) {
-    return;
-  }
 
   if (src.includes("jspdf") && window.jspdf?.jsPDF) {
     return;
@@ -80,17 +75,13 @@ async function loadScript(src: string) {
   });
 }
 
-async function ensureSnapshotDependencies() {
-  if (!window.html2canvas) {
-    await loadScript("/vendor/html2canvas.min.js");
-  }
-
+async function ensurePdfDependency() {
   if (!window.jspdf?.jsPDF) {
     await loadScript("/vendor/jspdf.umd.min.js");
   }
 
-  if (!window.html2canvas || !window.jspdf?.jsPDF) {
-    throw new Error("Export libraries could not be loaded.");
+  if (!window.jspdf?.jsPDF) {
+    throw new Error("PDF export library could not be loaded.");
   }
 }
 
@@ -159,7 +150,7 @@ function normalizeUnsupportedColorFunctions(value: string) {
   return value.replace(UNSUPPORTED_COLOR_FUNCTION_PATTERN, (token) => normalizeColorFunctionToken(token));
 }
 
-function normalizeCloneColorsForHtml2Canvas(root: HTMLElement) {
+function normalizeCloneColorsForExport(root: HTMLElement) {
   const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
 
   elements.forEach((element) => {
@@ -248,9 +239,53 @@ function createExportClone(element: HTMLElement, format: ExportSurface) {
 
   wrapper.appendChild(clone);
   document.body.appendChild(wrapper);
-  normalizeCloneColorsForHtml2Canvas(clone);
+  normalizeCloneColorsForExport(clone);
 
   return { wrapper, clone, width: Math.ceil(rect.width) };
+}
+
+async function renderCloneToCanvas(clone: HTMLElement, width: number) {
+  const height = Math.max(1, Math.ceil(clone.scrollHeight));
+  const scale = 2;
+  const clonedMarkup = new XMLSerializer().serializeToString(clone);
+  const svgMarkup = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <foreignObject width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;background:#ffffff;overflow:hidden;">
+          ${clonedMarkup}
+        </div>
+      </foreignObject>
+    </svg>
+  `;
+
+  const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const nextImage = new Image();
+      nextImage.onload = () => resolve(nextImage);
+      nextImage.onerror = () => reject(new Error("Unable to render resume preview for export."));
+      nextImage.src = url;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(width * scale);
+    canvas.height = Math.ceil(height * scale);
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      throw new Error("Unable to create export canvas context.");
+    }
+
+    context.scale(scale, scale);
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
@@ -289,7 +324,6 @@ function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
 }
 
 async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface) {
-  await ensureSnapshotDependencies();
   await waitForPreviewReady();
 
   if (!element.isConnected) {
@@ -302,20 +336,7 @@ async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface)
 
   try {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    return await window.html2canvas!(clone, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-      onclone: (clonedDocument) => {
-        clonedDocument.querySelectorAll('style, link[rel="stylesheet"]').forEach((node) => node.remove());
-      },
-      width,
-      height: Math.ceil(clone.scrollHeight),
-      windowWidth: Math.max(document.documentElement.clientWidth, width),
-      windowHeight: Math.max(document.documentElement.clientHeight, Math.ceil(clone.scrollHeight)),
-      scrollX: 0,
-      scrollY: 0,
-    });
+    return await renderCloneToCanvas(clone, width);
   } finally {
     wrapper.remove();
     document.body.style.overflow = previousOverflow;
@@ -329,6 +350,8 @@ async function createSnapshotPages(element: HTMLElement, format: ExportSurface) 
 }
 
 export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
+  await ensurePdfDependency();
+  console.info("[Resume Export] Using SVG snapshot renderer for PDF export");
   const { canvas } = await createSnapshotPages(element, "pdf");
   const pdf = new window.jspdf!.jsPDF({
     orientation: "portrait",
@@ -460,6 +483,7 @@ async function canvasToUint8Array(canvas: HTMLCanvasElement) {
 }
 
 export async function exportResumeAsDocx(element: HTMLElement, resume: ResumeDocument) {
+  console.info("[Resume Export] Using SVG snapshot renderer for DOCX export");
   const { pages } = await createSnapshotPages(element, "docx");
   const doc = new WordDocument({
     sections: [
@@ -520,6 +544,7 @@ export async function exportResumeAsDocx(element: HTMLElement, resume: ResumeDoc
 }
 
 export async function exportResumeAsDoc(element: HTMLElement, resume: ResumeDocument) {
+  console.info("[Resume Export] Using SVG snapshot renderer for DOC export");
   const { pages } = await createSnapshotPages(element, "doc");
   const images = pages.map((pageCanvas) => pageCanvas.toDataURL("image/png"));
   const html = `
