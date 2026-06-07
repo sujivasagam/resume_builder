@@ -252,7 +252,23 @@ function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
 async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface) {
   await waitForPreviewReady();
   if (!element.isConnected) throw new Error("Resume preview is not mounted.");
-  return await html2canvas(element,{scale:2,useCORS:true,backgroundColor:"#ffffff",logging:false});
+  return await html2canvas(element,{
+    scale:2,
+    useCORS:true,
+    backgroundColor:"#ffffff",
+    logging:false,
+    onclone:(doc)=>{
+      doc.querySelectorAll("*").forEach((node)=>{
+        const el = node;
+        try{
+          const style = getComputedStyle(el);
+          if(style.color && style.color.includes("oklch")) el.style.color="#000000";
+          if(style.backgroundColor && style.backgroundColor.includes("oklch")) el.style.backgroundColor="#ffffff";
+          if(style.borderColor && style.borderColor.includes("oklch")) el.style.borderColor="#d1d5db";
+        }catch(e){}
+      });
+    }
+  });
 }
 
 async function createSnapshotPages(element: HTMLElement, format: ExportSurface) {
