@@ -6,9 +6,21 @@ import {
   Paragraph,
   Document as WordDocument,
 } from "docx";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import { ResumeDocument } from "../types";
+
+declare global {
+  interface Window {
+    html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+    jspdf?: {
+      jsPDF: new (options?: Record<string, unknown>) => {
+        internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
+        addImage: (...args: unknown[]) => void;
+        addPage: () => void;
+        save: (fileName: string) => void;
+      };
+    };
+  }
+}
 
 const SNAPSHOT_PAGE_WIDTH_PX = 1500;
 const SNAPSHOT_PAGE_HEIGHT_PX = 2120;
@@ -38,6 +50,47 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+async function loadScript(src: string) {
+  const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
+  if (existing) {
+    if (existing.dataset.loaded === "true") {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+    });
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = () => {
+      script.dataset.loaded = "true";
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureSnapshotDependencies() {
+  if (!window.html2canvas) {
+    await loadScript("/vendor/html2canvas.min.js");
+  }
+
+  if (!window.jspdf?.jsPDF) {
+    await loadScript("/vendor/jspdf.umd.min.js");
+  }
+
+  if (!window.html2canvas || !window.jspdf?.jsPDF) {
+    throw new Error("Export libraries could not be loaded.");
+  }
 }
 
 async function waitForPreviewReady() {
@@ -87,6 +140,7 @@ function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
 }
 
 async function capturePreviewCanvas(element: HTMLElement) {
+  await ensureSnapshotDependencies();
   await waitForPreviewReady();
 
   const previousOverflow = document.body.style.overflow;
@@ -94,7 +148,7 @@ async function capturePreviewCanvas(element: HTMLElement) {
 
   try {
     const rect = element.getBoundingClientRect();
-    return await html2canvas(element, {
+    return await window.html2canvas!(element, {
       scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
@@ -118,7 +172,7 @@ async function createSnapshotPages(element: HTMLElement) {
 
 export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
   const { canvas } = await createSnapshotPages(element);
-  const pdf = new jsPDF({
+  const pdf = new window.jspdf!.jsPDF({
     orientation: "portrait",
     unit: "pt",
     format: "a4",
