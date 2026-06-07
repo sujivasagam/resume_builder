@@ -35,8 +35,13 @@ function downloadBlob(blob: Blob, fileName: string) {
   const link = document.createElement("a");
   link.href = url;
   link.download = fileName;
+  link.style.display = "none";
+  document.body.appendChild(link);
   link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 2000);
 }
 
 function sanitizeFileName(name: string, extension: string) {
@@ -53,22 +58,44 @@ function escapeHtml(value: string) {
 }
 
 async function loadScript(src: string) {
+  const absoluteSrc = new URL(src, window.location.href).href;
   const existing = document.querySelector(`script[src="${src}"]`) as HTMLScriptElement | null;
-  if (existing) {
-    if (existing.dataset.loaded === "true") {
+  const matchingAbsolute = document.querySelector(`script[src="${absoluteSrc}"]`) as HTMLScriptElement | null;
+  const target = existing ?? matchingAbsolute;
+
+  if (src.includes("html2canvas") && window.html2canvas) {
+    return;
+  }
+
+  if (src.includes("jspdf") && window.jspdf?.jsPDF) {
+    return;
+  }
+  if (target) {
+    if (target.dataset.loaded === "true") {
       return;
     }
 
     await new Promise<void>((resolve, reject) => {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+      const timeout = window.setTimeout(() => reject(new Error(`Timed out loading ${src}`)), 10000);
+      const handleLoad = () => {
+        window.clearTimeout(timeout);
+        target.dataset.loaded = "true";
+        resolve();
+      };
+      const handleError = () => {
+        window.clearTimeout(timeout);
+        reject(new Error(`Failed to load ${src}`));
+      };
+
+      target.addEventListener("load", handleLoad, { once: true });
+      target.addEventListener("error", handleError, { once: true });
     });
     return;
   }
 
   await new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = src;
+    script.src = absoluteSrc;
     script.async = true;
     script.onload = () => {
       script.dataset.loaded = "true";
@@ -102,6 +129,31 @@ async function waitForPreviewReady() {
     }
   }
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+function createExportClone(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "fixed";
+  wrapper.style.left = "-100000px";
+  wrapper.style.top = "0";
+  wrapper.style.zIndex = "-1";
+  wrapper.style.pointerEvents = "none";
+  wrapper.style.background = "#ffffff";
+  wrapper.style.padding = "0";
+  wrapper.style.margin = "0";
+  wrapper.style.width = `${Math.ceil(rect.width)}px`;
+  wrapper.style.overflow = "visible";
+
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone.style.width = `${Math.ceil(rect.width)}px`;
+  clone.style.maxWidth = "none";
+  clone.style.margin = "0";
+
+  wrapper.appendChild(clone);
+  document.body.appendChild(wrapper);
+
+  return { wrapper, clone, width: Math.ceil(rect.width) };
 }
 
 function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
@@ -145,21 +197,23 @@ async function capturePreviewCanvas(element: HTMLElement) {
 
   const previousOverflow = document.body.style.overflow;
   document.body.style.overflow = "visible";
+  const { wrapper, clone, width } = createExportClone(element);
 
   try {
-    const rect = element.getBoundingClientRect();
-    return await window.html2canvas!(element, {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return await window.html2canvas!(clone, {
       scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
-      width: Math.ceil(rect.width),
-      height: Math.ceil(element.scrollHeight),
-      windowWidth: Math.max(document.documentElement.clientWidth, Math.ceil(rect.width)),
-      windowHeight: Math.max(document.documentElement.clientHeight, Math.ceil(element.scrollHeight)),
+      width,
+      height: Math.ceil(clone.scrollHeight),
+      windowWidth: Math.max(document.documentElement.clientWidth, width),
+      windowHeight: Math.max(document.documentElement.clientHeight, Math.ceil(clone.scrollHeight)),
       scrollX: 0,
-      scrollY: -window.scrollY,
+      scrollY: 0,
     });
   } finally {
+    wrapper.remove();
     document.body.style.overflow = previousOverflow;
   }
 }
