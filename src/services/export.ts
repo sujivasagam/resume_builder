@@ -178,6 +178,31 @@ function normalizeCloneColorsForHtml2Canvas(root: HTMLElement) {
   });
 }
 
+function inlineComputedStyles(source: HTMLElement, target: HTMLElement) {
+  const computedStyle = getComputedStyle(source);
+
+  Array.from(computedStyle).forEach((property) => {
+    const value = computedStyle.getPropertyValue(property);
+    const priority = computedStyle.getPropertyPriority(property);
+    if (!value) {
+      return;
+    }
+
+    target.style.setProperty(property, normalizeUnsupportedColorFunctions(value), priority);
+  });
+
+  target.removeAttribute("class");
+
+  const sourceChildren = Array.from(source.children) as HTMLElement[];
+  const targetChildren = Array.from(target.children) as HTMLElement[];
+  sourceChildren.forEach((child, index) => {
+    const matchingTarget = targetChildren[index];
+    if (matchingTarget) {
+      inlineComputedStyles(child, matchingTarget);
+    }
+  });
+}
+
 function normalizeInteractiveCloneForStaticExport(clone: HTMLElement, format: ExportSurface) {
   const templateId = clone.dataset.templateId;
   if (templateId !== "interactive") {
@@ -219,6 +244,7 @@ function createExportClone(element: HTMLElement, format: ExportSurface) {
   clone.style.maxWidth = "none";
   clone.style.margin = "0";
   normalizeInteractiveCloneForStaticExport(clone, format);
+  inlineComputedStyles(element, clone);
 
   wrapper.appendChild(clone);
   document.body.appendChild(wrapper);
@@ -280,6 +306,9 @@ async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface)
       scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
+      onclone: (clonedDocument) => {
+        clonedDocument.querySelectorAll('style, link[rel="stylesheet"]').forEach((node) => node.remove());
+      },
       width,
       height: Math.ceil(clone.scrollHeight),
       windowWidth: Math.max(document.documentElement.clientWidth, width),
