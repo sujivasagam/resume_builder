@@ -30,6 +30,12 @@ const DOCX_MARGIN_TWIP = 360;
 const DOCX_IMAGE_WIDTH_PX = 718;
 type ExportSurface = "pdf" | "doc" | "docx";
 const UNSUPPORTED_COLOR_FUNCTION_PATTERN = /(oklch|oklab)\([^)]+\)/gi;
+const EXPORT_FONT_STACKS: Array<{ match: RegExp; replacement: string }> = [
+  { match: /outfit/gi, replacement: '"Segoe UI", Arial, sans-serif' },
+  { match: /inter/gi, replacement: '"Segoe UI", Arial, sans-serif' },
+  { match: /playfair display/gi, replacement: 'Georgia, "Times New Roman", serif' },
+  { match: /jetbrains mono/gi, replacement: '"Courier New", Consolas, monospace' },
+];
 
 async function loadScript(src: string) {
   const absoluteSrc = new URL(src, window.location.href).href;
@@ -150,6 +156,14 @@ function normalizeUnsupportedColorFunctions(value: string) {
   return value.replace(UNSUPPORTED_COLOR_FUNCTION_PATTERN, (token) => normalizeColorFunctionToken(token));
 }
 
+function normalizeFontFamilyForExport(value: string) {
+  if (!value) {
+    return value;
+  }
+
+  return EXPORT_FONT_STACKS.reduce((currentValue, fontEntry) => currentValue.replace(fontEntry.match, fontEntry.replacement), value);
+}
+
 function normalizeCloneColorsForExport(root: HTMLElement) {
   const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
 
@@ -179,7 +193,12 @@ function inlineComputedStyles(source: HTMLElement, target: HTMLElement) {
       return;
     }
 
-    target.style.setProperty(property, normalizeUnsupportedColorFunctions(value), priority);
+    const normalizedValue =
+      property === "font-family"
+        ? normalizeFontFamilyForExport(value)
+        : normalizeUnsupportedColorFunctions(value);
+
+    target.style.setProperty(property, normalizedValue, priority);
   });
 
   target.removeAttribute("class");
