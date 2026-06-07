@@ -30,6 +30,7 @@ const DOCX_PAGE_HEIGHT_TWIP = 16838;
 const DOCX_MARGIN_TWIP = 360;
 const DOCX_IMAGE_WIDTH_PX = 718;
 type ExportSurface = "pdf" | "doc" | "docx";
+const UNSUPPORTED_COLOR_FUNCTION_PATTERN = /(oklch|oklab)\([^)]+\)/gi;
 
 async function loadScript(src: string) {
   const absoluteSrc = new URL(src, window.location.href).href;
@@ -131,6 +132,52 @@ async function waitForPreviewReady() {
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
+function normalizeColorFunctionToken(token: string) {
+  const sample = document.createElement("span");
+  sample.style.color = token;
+  document.body.appendChild(sample);
+
+  try {
+    const computedColor = getComputedStyle(sample).color;
+    if (computedColor && !computedColor.includes("oklch(") && !computedColor.includes("oklab(")) {
+      return computedColor;
+    }
+  } finally {
+    sample.remove();
+  }
+
+  return token;
+}
+
+function normalizeUnsupportedColorFunctions(value: string) {
+  if (!value || !UNSUPPORTED_COLOR_FUNCTION_PATTERN.test(value)) {
+    UNSUPPORTED_COLOR_FUNCTION_PATTERN.lastIndex = 0;
+    return value;
+  }
+
+  UNSUPPORTED_COLOR_FUNCTION_PATTERN.lastIndex = 0;
+  return value.replace(UNSUPPORTED_COLOR_FUNCTION_PATTERN, (token) => normalizeColorFunctionToken(token));
+}
+
+function normalizeCloneColorsForHtml2Canvas(root: HTMLElement) {
+  const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
+
+  elements.forEach((element) => {
+    const computedStyle = getComputedStyle(element);
+    Array.from(computedStyle).forEach((property) => {
+      const value = computedStyle.getPropertyValue(property);
+      if (!value || (!value.includes("oklch(") && !value.includes("oklab("))) {
+        return;
+      }
+
+      const normalizedValue = normalizeUnsupportedColorFunctions(value);
+      if (normalizedValue !== value) {
+        element.style.setProperty(property, normalizedValue);
+      }
+    });
+  });
+}
+
 function normalizeInteractiveCloneForStaticExport(clone: HTMLElement, format: ExportSurface) {
   const templateId = clone.dataset.templateId;
   if (templateId !== "interactive") {
@@ -175,6 +222,7 @@ function createExportClone(element: HTMLElement, format: ExportSurface) {
 
   wrapper.appendChild(clone);
   document.body.appendChild(wrapper);
+  normalizeCloneColorsForHtml2Canvas(clone);
 
   return { wrapper, clone, width: Math.ceil(rect.width) };
 }
