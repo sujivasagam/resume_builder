@@ -6,9 +6,21 @@ import {
   Paragraph,
   Document as WordDocument,
 } from "docx";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import { ResumeDocument } from "../types";
+
+declare global {
+  interface Window {
+    html2canvas?: (element: HTMLElement, options?: Record<string, unknown>) => Promise<HTMLCanvasElement>;
+    jspdf?: {
+      jsPDF: new (options?: Record<string, unknown>) => {
+        internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
+        addImage: (...args: unknown[]) => void;
+        addPage: () => void;
+        save: (fileName: string) => void;
+      };
+    };
+  }
+}
 
 const SNAPSHOT_PAGE_WIDTH_PX = 1500;
 const SNAPSHOT_PAGE_HEIGHT_PX = 2120;
@@ -18,6 +30,68 @@ const DOCX_PAGE_HEIGHT_TWIP = 16838;
 const DOCX_MARGIN_TWIP = 360;
 const DOCX_IMAGE_WIDTH_PX = 718;
 type ExportSurface = "pdf" | "doc" | "docx";
+
+async function loadScript(src: string) {
+  const absoluteSrc = new URL(src, window.location.href).href;
+  const existing = document.querySelector(`script[src="${src}"], script[src="${absoluteSrc}"]`) as HTMLScriptElement | null;
+
+  if (src.includes("html2canvas") && window.html2canvas) {
+    return;
+  }
+
+  if (src.includes("jspdf") && window.jspdf?.jsPDF) {
+    return;
+  }
+
+  if (existing) {
+    if (existing.dataset.loaded === "true") {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => reject(new Error(`Timed out loading ${src}`)), 10000);
+      const handleLoad = () => {
+        window.clearTimeout(timeout);
+        existing.dataset.loaded = "true";
+        resolve();
+      };
+      const handleError = () => {
+        window.clearTimeout(timeout);
+        reject(new Error(`Failed to load ${src}`));
+      };
+
+      existing.addEventListener("load", handleLoad, { once: true });
+      existing.addEventListener("error", handleError, { once: true });
+    });
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = absoluteSrc;
+    script.async = true;
+    script.onload = () => {
+      script.dataset.loaded = "true";
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureSnapshotDependencies() {
+  if (!window.html2canvas) {
+    await loadScript("/vendor/html2canvas.min.js");
+  }
+
+  if (!window.jspdf?.jsPDF) {
+    await loadScript("/vendor/jspdf.umd.min.js");
+  }
+
+  if (!window.html2canvas || !window.jspdf?.jsPDF) {
+    throw new Error("Export libraries could not be loaded.");
+  }
+}
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -141,6 +215,7 @@ function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
 }
 
 async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface) {
+  await ensureSnapshotDependencies();
   await waitForPreviewReady();
 
   if (!element.isConnected) {
@@ -153,7 +228,7 @@ async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface)
 
   try {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    return await html2canvas(clone, {
+    return await window.html2canvas!(clone, {
       scale: 2,
       useCORS: true,
       backgroundColor: "#ffffff",
@@ -178,7 +253,7 @@ async function createSnapshotPages(element: HTMLElement, format: ExportSurface) 
 
 export async function exportResumeAsPdf(element: HTMLElement, fileName: string) {
   const { canvas } = await createSnapshotPages(element, "pdf");
-  const pdf = new jsPDF({
+  const pdf = new window.jspdf!.jsPDF({
     orientation: "portrait",
     unit: "pt",
     format: "a4",
