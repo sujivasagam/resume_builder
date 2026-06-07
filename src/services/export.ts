@@ -1,3 +1,5 @@
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import {
   AlignmentType,
   Document as WordDocument,
@@ -7,19 +9,6 @@ import {
   Paragraph,
 } from "docx";
 import { ResumeDocument } from "../types";
-
-declare global {
-  interface Window {
-    jspdf?: {
-      jsPDF: new (options?: Record<string, unknown>) => {
-        internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
-        addImage: (...args: unknown[]) => void;
-        addPage: () => void;
-        save: (fileName: string) => void;
-      };
-    };
-  }
-}
 
 const SNAPSHOT_PAGE_WIDTH_PX = 1500;
 const SNAPSHOT_PAGE_HEIGHT_PX = 2120;
@@ -74,15 +63,7 @@ async function loadScript(src: string) {
   });
 }
 
-async function ensurePdfDependency() {
-  if (!window.jspdf?.jsPDF) {
-    await loadScript("/vendor/jspdf.umd.min.js");
-  }
-
-  if (!window.jspdf?.jsPDF) {
-    throw new Error("PDF export library could not be loaded.");
-  }
-}
+async function ensurePdfDependency() { return; }
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -270,22 +251,8 @@ function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
 
 async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface) {
   await waitForPreviewReady();
-
-  if (!element.isConnected) {
-    throw new Error("Resume preview is not mounted. Open the Export view and try again.");
-  }
-
-  const previousOverflow = document.body.style.overflow;
-  document.body.style.overflow = "visible";
-  const { wrapper, clone, width } = createExportClone(element, format);
-
-  try {
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    return await renderCloneToCanvas(clone, width);
-  } finally {
-    wrapper.remove();
-    document.body.style.overflow = previousOverflow;
-  }
+  if (!element.isConnected) throw new Error("Resume preview is not mounted.");
+  return await html2canvas(element,{scale:2,useCORS:true,backgroundColor:"#ffffff",logging:false});
 }
 
 async function createSnapshotPages(element: HTMLElement, format: ExportSurface) {
@@ -299,7 +266,7 @@ export async function exportResumeAsPdf(element: HTMLElement, fileName: string, 
   console.info("[Resume Export] Using preview snapshot renderer for PDF export");
 
   const { canvas } = await createSnapshotPages(element, "pdf");
-  const pdf = new window.jspdf!.jsPDF({
+  const pdf = new jsPDF({
     orientation: "portrait",
     unit: "pt",
     format: "a4",
@@ -330,7 +297,7 @@ export async function exportResumeAsPdf(element: HTMLElement, fileName: string, 
     );
   });
 
-  pdf.save(sanitizeFileName(fileName.replace(/\.pdf$/i, ""), "pdf"));
+  pdf.save(sanitizeFileName(`${fileName.replace(/\.pdf$/i, "")}_Resume`, "pdf"));
 }
 
 function getAbsoluteStylesMarkup() {
@@ -480,7 +447,7 @@ export async function exportResumeAsDocx(element: HTMLElement, resume: ResumeDoc
   });
 
   const blob = await Packer.toBlob(doc);
-  downloadBlob(blob, sanitizeFileName(resume.name, "docx"));
+  downloadBlob(blob, sanitizeFileName(`${resume.name}_Resume`, "docx"));
 }
 
 export async function exportResumeAsDoc(element: HTMLElement, resume: ResumeDocument) {
@@ -506,5 +473,5 @@ export async function exportResumeAsDoc(element: HTMLElement, resume: ResumeDocu
     </html>
   `;
 
-  downloadBlob(new Blob([html], { type: "application/msword" }), sanitizeFileName(resume.name, "doc"));
+  downloadBlob(new Blob([html], { type: "application/vnd.ms-word" }), sanitizeFileName(`${resume.name}_Resume`, "doc"));
 }
