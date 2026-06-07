@@ -24,7 +24,7 @@ export function ExportCenter({ resume }: Props) {
     }
     try {
       setStatus("Generating visual PDF...");
-      await exportResumeAsPdf(element, `${resume.name}.pdf`);
+      await exportResumeAsPdf(element, `${resume.name}.pdf`, resume);
       setStatus("PDF downloaded.");
     } catch (error) {
       logExportError("PDF", error);
@@ -96,12 +96,12 @@ export function ExportCenter({ resume }: Props) {
         </button>
       </div>
       <p className="text-sm text-slate-500">
-        PDF, DOC, and DOCX now use the live preview as a visual snapshot source. HTML still gives the closest match for design plus working in-browser section navigation.
+        PDF, DOC, and DOCX now use a structured resume export flow for reliable downloads. HTML still gives the closest match to the live preview plus in-browser section navigation.
       </p>
       {status ? <div className="rounded-2xl bg-slate-100 px-4 py-3 text-sm text-slate-700 dark:bg-slate-900 dark:text-slate-200">{status}</div> : null}
       {resume.templateId === "interactive" ? (
         <p className="text-sm text-slate-500">
-          For the Interactive template, PDF, DOC, and DOCX exports now keep the same visual style but remove the navigation-first interactive treatment. HTML still keeps the browser-style section navigation.
+          For the Interactive template, PDF, DOC, and DOCX now export a clean document version of the same resume content. HTML still keeps the browser-style section navigation.
         </p>
       ) : null}
     </section>
