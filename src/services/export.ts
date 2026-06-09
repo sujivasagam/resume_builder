@@ -1,5 +1,3 @@
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import {
   AlignmentType,
   Document as WordDocument,
@@ -9,6 +7,19 @@ import {
   Paragraph,
 } from "docx";
 import { ResumeDocument } from "../types";
+
+declare global {
+  interface Window {
+    jspdf?: {
+      jsPDF: new (options?: Record<string, unknown>) => {
+        internal: { pageSize: { getWidth: () => number; getHeight: () => number } };
+        addImage: (...args: unknown[]) => void;
+        addPage: () => void;
+        save: (fileName: string) => void;
+      };
+    };
+  }
+}
 
 const SNAPSHOT_PAGE_WIDTH_PX = 1500;
 const SNAPSHOT_PAGE_HEIGHT_PX = 2120;
@@ -63,7 +74,15 @@ async function loadScript(src: string) {
   });
 }
 
-async function ensurePdfDependency() { return; }
+async function ensurePdfDependency() {
+  if (!window.jspdf?.jsPDF) {
+    await loadScript("/vendor/jspdf.umd.min.js");
+  }
+
+  if (!window.jspdf?.jsPDF) {
+    throw new Error("PDF export library could not be loaded.");
+  }
+}
 
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
@@ -249,43 +268,23 @@ function sliceCanvas(canvas: HTMLCanvasElement, targetPageHeightPx: number) {
   return pages;
 }
 
-
 async function capturePreviewCanvas(element: HTMLElement, format: ExportSurface) {
   await waitForPreviewReady();
 
   if (!element.isConnected) {
-    throw new Error("Resume preview is not mounted.");
+    throw new Error("Resume preview is not mounted. Open the Export view and try again.");
   }
 
-  const clonedElement = element.cloneNode(true) as HTMLElement;
-
-  const wrapper = document.createElement("div");
-  wrapper.style.position = "fixed";
-  wrapper.style.left = "-99999px";
-  wrapper.style.top = "0";
-  wrapper.style.background = "#ffffff";
-  wrapper.style.width = `${element.offsetWidth}px`;
-
-  wrapper.appendChild(clonedElement);
-  document.body.appendChild(wrapper);
-
-  wrapper.querySelectorAll("*").forEach((el) => {
-    const htmlEl = el as HTMLElement;
-    htmlEl.className = "";
-    htmlEl.style.color = "#000000";
-    htmlEl.style.backgroundColor = "#ffffff";
-    htmlEl.style.borderColor = "#d1d5db";
-  });
+  const previousOverflow = document.body.style.overflow;
+  document.body.style.overflow = "visible";
+  const { wrapper, clone, width } = createExportClone(element, format);
 
   try {
-    return await html2canvas(wrapper, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-      logging: false,
-    });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return await renderCloneToCanvas(clone, width);
   } finally {
-    document.body.removeChild(wrapper);
+    wrapper.remove();
+    document.body.style.overflow = previousOverflow;
   }
 }
 
@@ -300,7 +299,7 @@ export async function exportResumeAsPdf(element: HTMLElement, fileName: string, 
   console.info("[Resume Export] Using preview snapshot renderer for PDF export");
 
   const { canvas } = await createSnapshotPages(element, "pdf");
-  const pdf = new jsPDF({
+  const pdf = new window.jspdf!.jsPDF({
     orientation: "portrait",
     unit: "pt",
     format: "a4",
@@ -331,7 +330,7 @@ export async function exportResumeAsPdf(element: HTMLElement, fileName: string, 
     );
   });
 
-  pdf.save(sanitizeFileName(`${fileName.replace(/\.pdf$/i, "")}_Resume`, "pdf"));
+  pdf.save(sanitizeFileName(fileName.replace(/\.pdf$/i, ""), "pdf"));
 }
 
 function getAbsoluteStylesMarkup() {
@@ -481,7 +480,7 @@ export async function exportResumeAsDocx(element: HTMLElement, resume: ResumeDoc
   });
 
   const blob = await Packer.toBlob(doc);
-  downloadBlob(blob, sanitizeFileName(`${resume.name}_Resume`, "docx"));
+  downloadBlob(blob, sanitizeFileName(resume.name, "docx"));
 }
 
 export async function exportResumeAsDoc(element: HTMLElement, resume: ResumeDocument) {
@@ -507,5 +506,5 @@ export async function exportResumeAsDoc(element: HTMLElement, resume: ResumeDocu
     </html>
   `;
 
-  downloadBlob(new Blob([html], { type: "application/vnd.ms-word" }), sanitizeFileName(`${resume.name}_Resume`, "doc"));
+  downloadBlob(new Blob([html], { type: "application/msword" }), sanitizeFileName(resume.name, "doc"));
 }
